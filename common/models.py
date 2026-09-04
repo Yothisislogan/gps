@@ -109,6 +109,9 @@ class RelativeAddress(BaseModel):
 
     raw: str
     landmark_text: str
+    #: The landmark stripped of "donde fue"/"antiguo" and of leading articles —
+    #: what to send to the gazetteer.  ``landmark_text`` stays display-ready.
+    landmark_query: str | None = None
     offsets: list[RelativeOffset] = []
     modifiers: list[str] = []
     former_landmark: bool = False
