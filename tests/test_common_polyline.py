@@ -51,3 +51,18 @@ def test_truncated_payload_returns_clean_prefix():
 def test_negative_and_zero_coordinates():
     coords = [(0.0, 0.0), (-12.5, 86.25), (12.5, -86.25)]
     assert decode(encode(coords)) == pytest.approx(coords, abs=1e-6)
+
+
+class TestValidation:
+    """`decode` is lenient by design, so callers validate first."""
+
+    def test_accepts_a_real_encoding(self):
+        from common.polyline import is_valid
+
+        assert is_valid(encode(MGA_TO_GRANADA)) is True
+
+    @pytest.mark.parametrize("bad", ["", "!!!!", "hola mundo", "abc\n", "ñañara"])
+    def test_rejects_garbage(self, bad: str):
+        from common.polyline import is_valid
+
+        assert is_valid(bad) is False

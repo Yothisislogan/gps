@@ -9,9 +9,22 @@ uniquely confusing bug — so precision is an explicit argument everywhere and
 
 from __future__ import annotations
 
-__all__ = ["VALHALLA_PRECISION", "decode", "encode"]
+__all__ = ["VALHALLA_PRECISION", "decode", "encode", "is_valid"]
 
 VALHALLA_PRECISION = 6
+
+
+def is_valid(encoded: str) -> bool:
+    """True when every byte is in the codec's alphabet.
+
+    :func:`decode` is deliberately lenient — a truncated shape should yield the
+    prefix that decoded cleanly rather than an exception — which means it will
+    happily turn arbitrary text into coordinates.  Anything reaching the API
+    from a query string gets checked here first.
+    """
+    if not encoded:
+        return False
+    return all(0x3F <= ord(char) <= 0x7E for char in encoded)
 
 
 def decode(encoded: str, precision: int = VALHALLA_PRECISION) -> list[tuple[float, float]]:
