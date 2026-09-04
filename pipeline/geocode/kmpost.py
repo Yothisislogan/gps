@@ -274,7 +274,9 @@ def load_highways(path: Path | str | None = None) -> tuple[Highway, ...]:
         aliases = _parse_aliases(row.get("aliases") or "", row_number, key)
         for alias in aliases:
             if alias in seen_aliases:
-                raise _fail(row_number, key, f"alias {alias!r} already claimed by {seen_aliases[alias]!r}")
+                raise _fail(
+                    row_number, key, f"alias {alias!r} already claimed by {seen_aliases[alias]!r}"
+                )
             seen_aliases[alias] = key
 
         ref = (row.get("osm_ref") or "").strip() or None
@@ -329,7 +331,9 @@ def _alias_index(path: Path | str | None = None) -> tuple[tuple[str, str, re.Pat
     for highway in load_highways(path):
         for alias in highway.aliases:
             pattern = re.compile(
-                r"(?<![a-z0-9])" + _ALIAS_GAP.join(re.escape(part) for part in alias.split()) + r"(?![a-z0-9])"
+                r"(?<![a-z0-9])"
+                + _ALIAS_GAP.join(re.escape(part) for part in alias.split())
+                + r"(?![a-z0-9])"
             )
             entries.append((alias, highway.highway_key, pattern))
     entries.sort(key=lambda item: (-len(item[0]), item[0]))
@@ -606,8 +610,7 @@ def _prefix_lengths(coords: Sequence[Coord]) -> list[float]:
     totals = [0.0]
     for i in range(len(coords) - 1):
         totals.append(
-            totals[-1]
-            + haversine_m(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0])
+            totals[-1] + haversine_m(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0])
         )
     return totals
 
@@ -654,7 +657,9 @@ def _project_calibration(
     for signed_m in sorted(projected):
         along_m = projected[signed_m][0]
         if monotonic and along_m <= monotonic[-1][1]:
-            log.debug("calibration Km %.3f is not monotonic along the line; dropped", signed_m / 1000)
+            log.debug(
+                "calibration Km %.3f is not monotonic along the line; dropped", signed_m / 1000
+            )
             continue
         monotonic.append((signed_m, along_m))
     return monotonic

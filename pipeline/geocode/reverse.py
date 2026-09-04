@@ -30,9 +30,13 @@ themselves.
 **Which words.**  ``al lago`` / ``al sur`` / ``arriba`` / ``abajo`` is the
 colloquial register (Managua's cardinals are topographic: the lake is north, the
 sun rises ``arriba``), ``al norte`` / ``al sur`` / ``al este`` / ``al oeste`` the
-formal one that goes on printed signage.  Both are emitted verbatim from the
-vocabulary in :data:`common.geo.DIRECTION_BEARINGS`, so anything this module
-prints parses straight back.
+formal one that goes on printed signage.  Every word is checked against
+:func:`common.geo.resolve_direction` *for the landmark's own town* before it is
+emitted, because half the vocabulary is geographic rather than compass: Lake
+Cocibolca is east of Granada, so "al lago" there means something ninety degrees
+away from what it means in Managua.  Where the local reading disagrees with the
+direction we mean, the cardinal word is used instead — an address that is
+slightly less colloquial is a far better outcome than one that is perpendicular.
 
 That last point is the contract: ``parse(describe(p))`` resolved through
 :func:`~pipeline.geocode.relative_address.resolve` must land back on ``p``, give
@@ -85,7 +89,7 @@ Style = Literal["colloquial", "formal"]
 # carries the reasoning that sets it; they are not arbitrary knobs.
 # --------------------------------------------------------------------------- #
 
-#: How far a landmark may be and still anchor an address.  Twelve blocks is
+#: How far a landmark may be and still anchor an address.  Fourteen blocks is
 #: already a long address; past that the listener stops counting and asks for a
 #: different reference, so we would rather return nothing than a 2 km hike.
 DEFAULT_MAX_LANDMARK_DISTANCE_M = 1_200.0
@@ -95,12 +99,16 @@ DEFAULT_MAX_LANDMARK_DISTANCE_M = 1_200.0
 #: at most 12 m, well inside the error the block quantisation already carries.
 DEAD_ZONE_M = 12.0
 
-#: How far off a whole (or half) block a distance may be and still be called one.
-#: Managua's blocks are only nominally 100 m — they run 85-115 m in the older
-#: barrios — and the listener counts *corners*, not metres, so quantising within
-#: ~12 % of a block is closer to how the address will be used than an exact
-#: metre count would be.
-CUADRA_TOLERANCE_M = 12.0
+#: How far off a block boundary a distance may be and still be called a cuadra,
+#: as a fraction of the block.  A cuadra is a *count of corners*, not a measure:
+#: real blocks stretch and shrink, and the listener walks to the second corner
+#: whatever a tape would say.  Twelve per cent (~10 m on the 84 m colonial
+#: block) is wide enough to absorb that and narrow enough that two adjacent
+#: readings never both qualify.  It is a fraction and not a fixed number of
+#: metres on purpose: :data:`common.geo.DEFAULT_CUADRA_M` is a prior meant to be
+#: recalibrated from the street graph, and a metre window would silently change
+#: meaning underneath it.
+CUADRA_TOLERANCE_FRACTION = 0.12
 
 #: Varas are quoted on 25-vara steps and essentially never off them: "75 vrs" is
 #: idiomatic, "63 vrs" is a survey. Half a step (~10 m) would swallow distances
@@ -156,6 +164,10 @@ _DIRECTION_WORDS: dict[str, dict[str, str]] = {
     "formal": {"north": "al norte", "south": "al sur", "east": "al este", "west": "al oeste"},
 }
 
+#: What each axis means in compass degrees.  Every word we emit is checked
+#: against this, because the geographic half of the vocabulary is local.
+_AXIS_BEARINGS: dict[str, float] = {"north": 0.0, "east": 90.0, "south": 180.0, "west": 270.0}
+
 #: Landmark heads that are feminine without ending in -a, for the leading
 #: article ("De la Terminal", not "Del Terminal").
 _FEMININE_HEADS = frozenset({"terminal", "catedral", "sucursal", "cruz", "torre", "sede"})
@@ -200,35 +212,42 @@ def _round_metres(distance_m: float) -> float:
 def _quantise(distance_m: float, cuadra_m: float) -> _Hop | None:
     """Express one axis component in cuadras, varas or metres.
 
-    Returns ``None`` when the component is too short to be worth a hop.  Both
-    the cuadra and the vara reading are tried and the closer one wins, with the
-    cuadra breaking ties: block counting is the form people reach for first, but
-    "50 vrs" is a better answer than "media cuadra" for 42 m, and the round trip
-    is measurably tighter for it.
+    Returns ``None`` when the component is too short to be worth a hop.
+
+    Speech splits the two units by range, and it has to: the colonial cuadra
+    *is* 100 varas, so on an 84 m block "100 vrs" and "1c" name the same
+    distance and would otherwise compete for it.  Under a block people quote
+    varas ("75 vrs al sur"); from a block up they count corners ("2c al sur").
+    Giving each range its own ladder keeps the two readings disjoint whatever
+    the calibrated block length turns out to be, and the cuadra takes the
+    boundary because block counting is the primary register.
     """
     if distance_m < DEAD_ZONE_M:
         return None
 
     candidates: list[_Hop] = []
 
-    # Half blocks are as common as whole ones ("media cuadra al sur"), quarter
-    # blocks are not said at all, so the grid is 0.5c.
+    # Half blocks are said as readily as whole ones ("cuadra y media"), quarter
+    # blocks are not said at all, so the grid is 0.5c — but only from one block
+    # up, since below that the vara ladder is the same ladder.
     blocks = round(distance_m / cuadra_m * 2.0) / 2.0
-    if blocks >= 0.5:
+    if blocks >= 1.0:
         error = abs(blocks * cuadra_m - distance_m)
-        if error <= CUADRA_TOLERANCE_M:
+        if error <= CUADRA_TOLERANCE_FRACTION * cuadra_m:
             candidates.append(
                 _Hop(blocks, "cuadra", blocks * cuadra_m, error, _UNIT_IDIOM["cuadra"])
             )
 
     for step in VARA_STEPS:
         metres = step * VARA_M
+        if metres >= cuadra_m:
+            continue  # that is a cuadra, and gets said as one
         error = abs(metres - distance_m)
         if error <= VARA_TOLERANCE_M:
             candidates.append(_Hop(float(step), "vara", metres, error, _UNIT_IDIOM["vara"]))
 
     if candidates:
-        candidates.sort(key=lambda hop: (round(hop.error_m, 3), 0 if hop.unit == "cuadra" else 1))
+        candidates.sort(key=lambda hop: (0 if hop.unit == "cuadra" else 1, round(hop.error_m, 3)))
         return candidates[0]
 
     metres = _round_metres(distance_m)
@@ -267,19 +286,32 @@ class LandmarkChoice:
     cuadra_m: float
 
 
-def _direction(axis: str, style: Style) -> tuple[str, float]:
+def _direction(axis: str, style: Style, city: str | None) -> tuple[str, float]:
     """Word and bearing for one of the four axis directions.
 
     The bearing is looked up *from the word* through
     :func:`common.geo.resolve_direction` rather than hard-coded, so the offset
     we build and the offset a re-parse of our own output builds cannot drift
     apart.
+
+    That lookup is also the guard on the geographic register.  "Al lago" is
+    north in Managua and *east* in Granada, so emitting it for the north/south
+    axis outside the lake-is-north towns would write an address that rotates
+    ninety degrees the moment someone resolves it.  When the word does not point
+    where we mean in this city, we fall back to the cardinal one: "al norte" is
+    plain Spanish, it is what Granada's own street signs use, and it cannot be
+    misread by a reader — or a parser — that does not know which town it is in.
     """
+    intended = _AXIS_BEARINGS[axis]
     word = _DIRECTION_WORDS[style][axis]
-    bearing = resolve_direction(word)
-    if bearing is None:  # pragma: no cover - the vocabulary is asserted in tests
-        raise ValueError(f"direction word {word!r} is not in common.geo.DIRECTION_BEARINGS")
-    return word, bearing
+    if resolve_direction(word, city) == intended:
+        return word, intended
+    fallback = _DIRECTION_WORDS["formal"][axis]
+    bearing = resolve_direction(fallback, city)
+    if bearing != intended:  # pragma: no cover - the cardinals are city-independent
+        raise ValueError(f"direction word {fallback!r} does not bear {intended}° in {city!r}")
+    log.debug("geographic word %r is not %.0f° in %r; using %r", word, intended, city, fallback)
+    return fallback, intended
 
 
 def _decompose(
@@ -290,6 +322,7 @@ def _decompose(
     cuadra_m: float,
     style: Style,
     max_hops: int,
+    city: str | None,
 ) -> tuple[list[RelativeOffset], float, float]:
     """Split the landmark→pin delta into hops.
 
@@ -330,7 +363,7 @@ def _decompose(
             residual[signed_axis] = sign * raw_m
             idioms.append(1.0 if hop is None else _TRUNCATED_IDIOM)
             continue
-        word, bearing = _direction(axis, style)
+        word, bearing = _direction(axis, style, city)
         offsets.append(
             RelativeOffset(
                 quantity=hop.quantity,
@@ -367,7 +400,9 @@ def _prominence(match: LandmarkMatch) -> float:
     return default_popularity(match.kind or "otro", match.name)
 
 
-def _score(match: LandmarkMatch, distance_m: float, idiom: float, *, max_distance_m: float) -> float:
+def _score(
+    match: LandmarkMatch, distance_m: float, idiom: float, *, max_distance_m: float
+) -> float:
     """Rank one candidate landmark.  See the weight constants for the reasoning."""
     proximity = max(0.0, 1.0 - (distance_m / max_distance_m) ** 2)
     nearness = max(0.0, 1.0 - distance_m / NEAR_M)
@@ -410,9 +445,18 @@ def choose_landmark(
         distance_m = haversine_m(lat, lon, match.lat, match.lon)
         if distance_m > max_landmark_distance_m:
             continue
-        cuadra_m = cuadra_length_m(city or match.city)
+        # Both the block length and the meaning of "al lago" are local, and the
+        # landmark is the only thing here that knows which town this is.
+        effective_city = city or match.city
+        cuadra_m = cuadra_length_m(effective_city)
         offsets, idiom, error_m = _decompose(
-            match, lat, lon, cuadra_m=cuadra_m, style=style, max_hops=max_hops
+            match,
+            lat,
+            lon,
+            cuadra_m=cuadra_m,
+            style=style,
+            max_hops=max_hops,
+            city=effective_city,
         )
         score = _score(match, distance_m, idiom, max_distance_m=max_landmark_distance_m)
         if best is None or score > best.score:
