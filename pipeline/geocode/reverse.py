@@ -199,11 +199,11 @@ _FEMININE_SUFFIXES = ("a", "cion", "sion", "dad", "tad", "tud", "umbre", "eza", 
 _MASCULINE_HEADS = frozenset({"dia", "mapa", "problema", "clima", "tranvia", "planeta"})
 
 #: Names that already start with their own article take a contraction instead.
-_LEADING_ARTICLE_FORMS = {
-    "el": ("Del", "el"),
-    "la": ("De la", "la"),
-    "los": ("De los", "los"),
-    "las": ("De las", "las"),
+_LEADING_ARTICLE_FORMS: dict[str, str] = {
+    "el": "Del",
+    "la": "De la",
+    "los": "De los",
+    "las": "De las",
 }
 
 
