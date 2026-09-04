@@ -400,7 +400,7 @@ class TestGeocode:
         assert body["parsed_as"] == "relative"
         candidate = body["candidates"][0]
         assert candidate["landmark_name"] == "Rotonda El Güegüense"
-        assert candidate["relative"]["offsets"][0]["distance_m"] == 200.0
+        assert candidate["relative"]["offsets"][0]["distance_m"] == 168.0  # 2 cuadras
         assert candidate["snapped_to_road"] is True
 
     def test_pasted_coordinates(self, client):

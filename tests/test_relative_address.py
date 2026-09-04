@@ -7,6 +7,8 @@ a parser that only handles tidy input solves nothing.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from common.geo import VARA_M, destination_point, haversine_m
@@ -40,8 +42,9 @@ def no_landmarks(query: str, former: bool):
 
 class TestUnits:
     def test_cuadra_is_a_block(self):
-        assert unit_to_metres(2, "cuadra") == 200.0
-        assert unit_to_metres(0.5, "cuadra", city="Granada") == 50.0
+        # 100 varas of colonial platting, ~84 m — not a round 100 m.
+        assert unit_to_metres(2, "cuadra") == 168.0
+        assert unit_to_metres(0.5, "cuadra", city="Granada") == 42.0
 
     def test_vara(self):
         assert unit_to_metres(75, "vara") == pytest.approx(75 * VARA_M)
@@ -98,7 +101,7 @@ class TestParseOffsets:
             (2.0, "cuadra", 180.0),
             (1.0, "cuadra", 270.0),
         ]
-        assert parsed.total_distance_m == pytest.approx(300.0)
+        assert parsed.total_distance_m == pytest.approx(3 * 84.0)
 
     @pytest.mark.parametrize(
         ("raw", "quantity", "unit", "bearing"),
@@ -286,9 +289,9 @@ class TestResolve:
         candidate = candidates[0]
 
         expected_lat, expected_lon = destination_point(
-            *destination_point(ROTONDA_GUEGUENSE.lat, ROTONDA_GUEGUENSE.lon, 180.0, 200.0),
+            *destination_point(ROTONDA_GUEGUENSE.lat, ROTONDA_GUEGUENSE.lon, 180.0, 168.0),
             270.0,
-            100.0,
+            84.0,
         )
         assert candidate.lat == pytest.approx(expected_lat, abs=1e-6)
         assert candidate.lon == pytest.approx(expected_lon, abs=1e-6)
@@ -303,7 +306,7 @@ class TestResolve:
         assert candidate.lon < ROTONDA_GUEGUENSE.lon, "abajo (west) must decrease longitude"
         assert haversine_m(
             ROTONDA_GUEGUENSE.lat, ROTONDA_GUEGUENSE.lon, candidate.lat, candidate.lon
-        ) == pytest.approx(223.6, abs=2.0)
+        ) == pytest.approx(math.hypot(168.0, 84.0), abs=2.0)
 
     def test_no_landmark_match_yields_no_candidates(self):
         parsed = parse("De la Rotonda Inexistente, 2c al sur")
@@ -337,7 +340,7 @@ class TestResolve:
     def test_city_overrides_the_cuadra_length(self, monkeypatch: pytest.MonkeyPatch):
         from common import geo
 
-        monkeypatch.setitem(geo.CUADRA_M, "granada", 80.0)
+        monkeypatch.setitem(geo.CUADRA_M, "granada", 80.0)  # a deliberately odd value
         parsed = parse("Del Parque Central, 2c al sur")
         assert parsed is not None
         candidate = resolve(parsed, lookup_one(ROTONDA_GUEGUENSE), city="Granada")[0]
@@ -394,6 +397,50 @@ class TestResolve:
         bare_conf = resolve(bare, lookup_one(ROTONDA_GUEGUENSE))[0].confidence
         walked_conf = resolve(walked, lookup_one(ROTONDA_GUEGUENSE))[0].confidence
         assert bare_conf < walked_conf
+
+    def test_granada_addresses_walk_east_to_the_lake(self):
+        # Lake Cocibolca is east of Granada's Parque Central. Resolving this
+        # with Managua's orientation would send the pin a block and a half north
+        # instead — a real address landing in the wrong barrio.
+        parque = LandmarkMatch(
+            id="gz-granada",
+            name="Parque Central de Granada",
+            lat=11.9299,
+            lon=-85.9560,
+            score=0.95,
+            city="Granada",
+        )
+        parsed = parse("Del Parque Central, 2c al lago", city="Granada")
+        assert parsed is not None
+        assert parsed.offsets[0].bearing_deg == 90.0
+
+        candidate = resolve(parsed, lookup_one(parque), city="Granada")[0]
+        assert candidate.lon > parque.lon, "al lago in Granada means east"
+        assert candidate.lat == pytest.approx(parque.lat, abs=1e-4)
+
+    def test_the_resolver_relearns_the_city_from_the_landmark(self):
+        # The parser usually runs before the city is known — the gazetteer match
+        # is what reveals it — so resolve() must re-derive the bearing.
+        parque = LandmarkMatch(
+            id="gz-granada", name="Parque Central", lat=11.9299, lon=-85.9560, city="Granada"
+        )
+        parsed = parse("Del Parque Central, 2c al lago")  # parsed with no city
+        assert parsed is not None
+        assert parsed.offsets[0].bearing_deg == 0.0  # Managua default
+
+        candidate = resolve(parsed, lookup_one(parque), city="Granada")[0]
+        assert candidate.relative is not None
+        assert candidate.relative.offsets[0].bearing_deg == 90.0
+        assert candidate.lon > parque.lon
+
+    def test_an_unlisted_town_is_penalised_and_says_why(self):
+        somewhere = LandmarkMatch(
+            id="x", name="Iglesia", lat=13.0, lon=-85.0, score=0.9, city="Bluefields"
+        )
+        geographic = resolve(parse("De la Iglesia, 2c al lago"), lookup_one(somewhere))[0]
+        cardinal = resolve(parse("De la Iglesia, 2c al sur"), lookup_one(somewhere))[0]
+        assert geographic.confidence < cardinal.confidence
+        assert any("Managua" in note for note in geographic.notes)
 
     def test_lookup_receives_the_former_flag(self):
         seen: list[tuple[str, bool]] = []

@@ -36,10 +36,11 @@ from common.geo import (
     VARA_M,
     cuadra_length_m,
     destination_point,
+    lake_orientation_is_known,
     resolve_direction,
 )
 from common.models import GeocodeCandidate, GeocodeMethod, RelativeAddress, RelativeOffset
-from common.text import collapse_ws, parse_spanish_number, strip_accents
+from common.text import collapse_ws, normalize, parse_spanish_number, strip_accents
 
 __all__ = [
     "LandmarkMatch",
@@ -314,7 +315,17 @@ class _RawOffset:
     bearing_deg: float | None
 
 
-def _scan_offsets(folded: str, original: str) -> list[_RawOffset]:
+#: Direction words whose compass bearing depends on the town (see
+#: common.geo.CITY_ORIENTATION).  Used to lower confidence when the town is
+#: unknown, because "al lago" is north in Managua and east in Granada.
+_GEOGRAPHIC_DIRECTION_WORDS = ("lago", "montana")
+
+
+def _is_geographic(direction_text: str) -> bool:
+    return any(word in normalize(direction_text) for word in _GEOGRAPHIC_DIRECTION_WORDS)
+
+
+def _scan_offsets(folded: str, original: str, city: str | None = None) -> list[_RawOffset]:
     """Find every ``quantity unit direction`` hop, in reading order."""
     found: list[_RawOffset] = []
     taken: list[tuple[int, int]] = []
@@ -355,12 +366,12 @@ def _scan_offsets(folded: str, original: str) -> list[_RawOffset]:
             if unit is None:
                 continue
             direction_raw = match.group("dir") or ""
-            bearing = resolve_direction(direction_raw) if direction_raw else None
+            bearing = resolve_direction(direction_raw, city) if direction_raw else None
             # A parenthetical gloss often carries the direction: "hacia el este (arriba)".
             if bearing is None:
                 gloss = re.match(r"\s*\(([^)]+)\)", folded[match.end() :])
                 if gloss:
-                    bearing = resolve_direction(gloss.group(1))
+                    bearing = resolve_direction(gloss.group(1), city)
                     if bearing is not None:
                         direction_raw = gloss.group(1)
             taken.append((match.start(), match.end()))
@@ -387,14 +398,17 @@ def parse(text: str, *, city: str | None = None) -> RelativeAddress | None:
     — "frente al Colegio Centroamérica" is a perfectly good address — and comes
     back with an empty ``offsets`` list, which the resolver scores lower.
 
-    ``city`` selects the cuadra length; it does not otherwise affect the parse.
+    ``city`` selects both the cuadra length and the orientation of the
+    geographic direction words: "al lago" is north in Managua and east in
+    Granada, so parsing a Granada address without saying so rotates it ninety
+    degrees.
     """
     raw = collapse_ws(text or "")
     if not raw:
         return None
 
     folded = _normalise_for_match(raw)
-    offsets_raw = _scan_offsets(folded, raw)
+    offsets_raw = _scan_offsets(folded, raw, city)
 
     if offsets_raw:
         landmark_slice = raw[: offsets_raw[0].start]
@@ -518,7 +532,9 @@ def _walk(lat: float, lon: float, offsets: Sequence[RelativeOffset]) -> tuple[fl
     return lat, lon
 
 
-def _confidence(parsed: RelativeAddress, match: LandmarkMatch, *, snapped: bool) -> float:
+def _confidence(
+    parsed: RelativeAddress, match: LandmarkMatch, *, snapped: bool, city: str | None = None
+) -> float:
     """Score a candidate in [0, 1].
 
     Deliberately pessimistic.  A pin that claims 0.95 and lands two blocks away
@@ -544,6 +560,13 @@ def _confidence(parsed: RelativeAddress, match: LandmarkMatch, *, snapped: bool)
             score *= 0.88
     if parsed.former_landmark and not match.former:
         score *= 0.8
+    # "al lago" resolved with the Managua orientation in a town we have not
+    # established could be ninety degrees wrong; say so in the score rather than
+    # presenting a confident pin.
+    if any(_is_geographic(offset.direction_text) for offset in parsed.offsets) and not (
+        lake_orientation_is_known(city) or lake_orientation_is_known(match.city)
+    ):
+        score *= 0.75
     if snapped:
         score = min(1.0, score * 1.05)
     return round(max(0.0, min(1.0, score)), 4)
@@ -575,15 +598,22 @@ def resolve(
     if not matches:
         return []
 
-    # Re-derive distances if the caller knows the city and the parse did not.
+    # Re-derive distances *and* bearings when the caller knows the city and the
+    # parse did not: both the block length and the meaning of "al lago" are
+    # local, and the resolver usually learns the city from the matched landmark
+    # after the parser has already run.
     offsets = parsed.offsets
     if city:
-        offsets = [
-            offset.model_copy(
-                update={"distance_m": unit_to_metres(offset.quantity, offset.unit, city=city)}
-            )
-            for offset in offsets
-        ]
+        rederived = []
+        for offset in offsets:
+            update: dict[str, Any] = {
+                "distance_m": unit_to_metres(offset.quantity, offset.unit, city=city)
+            }
+            local_bearing = resolve_direction(offset.direction_text, city)
+            if local_bearing is not None:
+                update["bearing_deg"] = local_bearing
+            rederived.append(offset.model_copy(update=update))
+        offsets = rederived
 
     candidates: list[GeocodeCandidate] = []
     for match in matches:
@@ -605,7 +635,7 @@ def resolve(
                 lat=lat,
                 lon=lon,
                 label=walked.render(),
-                confidence=_confidence(walked, match, snapped=snapped),
+                confidence=_confidence(walked, match, snapped=snapped, city=city or match.city),
                 method=GeocodeMethod.RELATIVE,
                 snapped_to_road=snapped,
                 relative=walked,
@@ -634,6 +664,10 @@ def _notes(parsed: RelativeAddress, match: LandmarkMatch) -> list[str]:
         notes.append(f"1 cuadra = {DEFAULT_CUADRA_M:.0f} m")
     if parsed.side_hint:
         notes.append(f"Mano {parsed.side_hint}")
+    if any(_is_geographic(offset.direction_text) for offset in parsed.offsets) and not (
+        lake_orientation_is_known(match.city)
+    ):
+        notes.append("«al lago»/«a la montaña» se interpretaron con la orientación de Managua")
     return notes
 
 

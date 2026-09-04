@@ -24,6 +24,7 @@ from common.geo import (
     haversine_m,
     initial_bearing_deg,
     interpolate_along,
+    lake_orientation_is_known,
     line_length_m,
     local_projection,
     nearest_point_on_line,
@@ -193,7 +194,48 @@ class TestLocalProjection:
 
 class TestCuadra:
     def test_known_cities_and_fallback(self):
-        assert cuadra_length_m("Managua") == 100.0
-        assert cuadra_length_m("León") == 100.0  # accent-folded lookup
-        assert cuadra_length_m(None) == 100.0
-        assert cuadra_length_m("Bluefields") == 100.0
+        # A cuadra is one side of a manzana: 100 varas of colonial platting,
+        # which is ~84 m, not the round 100 m people often assume.
+        assert cuadra_length_m("Managua") == 84.0
+        assert cuadra_length_m("León") == 84.0  # accent-folded lookup
+        assert cuadra_length_m(None) == 84.0
+        assert cuadra_length_m("Bluefields") == 84.0
+
+    def test_a_cuadra_is_a_hundred_varas(self):
+        from common.geo import DEFAULT_CUADRA_M, VARA_M
+
+        assert pytest.approx(100 * VARA_M, abs=0.5) == DEFAULT_CUADRA_M
+
+
+class TestCityOrientation:
+    """The trap: "al lago" is geographic, not cardinal, so it is per-town."""
+
+    def test_the_lake_is_north_of_managua(self):
+        assert resolve_direction("al lago", "Managua") == 0.0
+        assert resolve_direction("a la montaña", "Managua") == 180.0
+
+    def test_the_lake_is_east_of_granada(self):
+        # Cocibolca lies east of the Parque Central; Calle La Calzada runs out
+        # to it. Treating "al lago" as north here rotates every Granada address
+        # by ninety degrees.
+        assert resolve_direction("al lago", "Granada") == 90.0
+        assert resolve_direction("al lago", "Granada") != resolve_direction("al lago", "Managua")
+
+    def test_solar_words_are_national(self):
+        for city in (None, "Managua", "Granada", "León", "Bluefields"):
+            assert resolve_direction("arriba", city) == 90.0
+            assert resolve_direction("abajo", city) == 270.0
+            assert resolve_direction("al norte", city) == 0.0
+            assert resolve_direction("al sur", city) == 180.0
+
+    def test_unknown_city_falls_back_to_managua_and_says_so(self):
+        assert resolve_direction("al lago", "Bluefields") == resolve_direction("al lago", "Managua")
+        assert lake_orientation_is_known("Bluefields") is False
+        assert lake_orientation_is_known("Granada") is True
+        assert lake_orientation_is_known(None) is False
+
+    def test_accent_and_case_insensitive_city_lookup(self):
+        assert resolve_direction("al lago", "GRANADA") == resolve_direction("al lago", "granada")
+        assert resolve_direction("a la montana", "León") == resolve_direction(
+            "a la montaña", "leon"
+        )

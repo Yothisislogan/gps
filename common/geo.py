@@ -13,6 +13,7 @@ import math
 from collections.abc import Sequence
 
 __all__ = [
+    "CITY_ORIENTATION",
     "CUADRA_M",
     "CURATION_RADIUS_M",
     "DEFAULT_CUADRA_M",
@@ -30,6 +31,7 @@ __all__ = [
     "haversine_m",
     "initial_bearing_deg",
     "interpolate_along",
+    "lake_orientation_is_known",
     "line_length_m",
     "local_projection",
     "nearest_point_on_line",
@@ -59,19 +61,32 @@ NICARAGUA_BBOX: tuple[float, float, float, float] = (-87.75, 10.68, -82.60, 15.0
 #: ("75 vrs al sur") even though nobody carries a vara stick any more.
 VARA_M = 0.836
 
-#: A *cuadra* is a city block.  Length varies by the colonial grid it was laid
-#: out on, so it is per-city and calibratable; 100 m is the Managua/Granada norm.
-DEFAULT_CUADRA_M = 100.0
+#: A *cuadra* is a city block: one side of a *manzana*, platted at 100 varas by
+#: the Spanish colonial standard, which is ~84 m — not the round 100 m people
+#: often assume.
+#:
+#: Two honest caveats, both of which argue for treating this as a prior rather
+#: than a measurement:
+#:
+#: 1. In speech a cuadra means "from this corner to the next", and real blocks
+#:    stretch and shrink. The colonial 100-vara grid holds in Granada's and
+#:    León's cores; post-1972 Managua is not a coherent grid at all.
+#: 2. No surveyed mean block size for Managua appears to be published.
+#:
+#: So: this is per-city and meant to be recalibrated from the OSM street graph
+#: (docs/RUNBOOK.md describes the measurement), and the geocoder snaps its
+#: result to a road rather than trusting the metric extrapolation.
+DEFAULT_CUADRA_M = 84.0
 CUADRA_M: dict[str, float] = {
-    "managua": 100.0,
-    "granada": 100.0,
-    "masaya": 100.0,
-    "leon": 100.0,
-    "jinotepe": 100.0,
-    "diriamba": 100.0,
-    "tipitapa": 100.0,
-    "ciudad sandino": 100.0,
-    "esteli": 100.0,
+    "managua": 84.0,
+    "granada": 84.0,
+    "masaya": 84.0,
+    "leon": 84.0,
+    "jinotepe": 84.0,
+    "diriamba": 84.0,
+    "tipitapa": 84.0,
+    "ciudad sandino": 84.0,
+    "esteli": 84.0,
 }
 
 
@@ -84,12 +99,43 @@ def cuadra_length_m(city: str | None = None) -> float:
     return CUADRA_M.get(normalize(city), DEFAULT_CUADRA_M)
 
 
+#: Cities whose "al lago" / "a la montaña" bearings are known, and what they
+#: resolve to.  **This is the trap in Nicaraguan addressing**: the words are
+#: geographic, not cardinal, so they point at different compass bearings in
+#: different towns.  In Managua, Lake Xolotlán is north and the Sierras are
+#: south.  In Granada, Lake Cocibolca is *east* — Calle La Calzada runs east
+#: from the Parque Central to the shore — and Volcán Mombacho is south-west.
+#: Hardcoding "al lago = north" nationally silently rotates every Granada
+#: address by ninety degrees, and Granada is the country's busiest tourist city.
+#:
+#: Cities not listed here fall back to the Managua orientation, which is right
+#: for the metro area and its suburbs (where most addresses are) and is flagged
+#: to callers by :func:`lake_orientation_is_known`.
+CITY_ORIENTATION: dict[str, dict[str, float]] = {
+    "managua": {"lago": 0.0, "montana": 180.0},
+    "ciudad sandino": {"lago": 0.0, "montana": 180.0},
+    "tipitapa": {"lago": 270.0, "montana": 180.0},  # UNVERIFIED: Xolotlán lies west
+    "granada": {"lago": 90.0, "montana": 225.0},  # Cocibolca east, Mombacho south-west
+    "rivas": {"lago": 90.0, "montana": 270.0},  # UNVERIFIED
+    "san jorge": {"lago": 90.0, "montana": 270.0},  # UNVERIFIED
+    "masaya": {"lago": 225.0, "montana": 180.0},  # UNVERIFIED: Laguna de Masaya lies south-west
+    "leon": {
+        "lago": 315.0,
+        "montana": 45.0,
+    },  # UNVERIFIED: the sea is north-west, the range north-east
+}
+
+#: The default orientation for a city we have no entry for.
+DEFAULT_ORIENTATION = CITY_ORIENTATION["managua"]
+
 #: Nicaraguan direction words mapped to compass bearings in degrees.
 #:
-#: Managua's cardinal slang is topographic, not solar: the lake is north and the
-#: hills are south, while ``arriba``/``abajo`` follow the sunrise (east/west).
-#: Getting these four wrong silently rotates every parsed address by 90°, so
-#: they are asserted in the test-suite.
+#: The solar pair is national: ``arriba`` is east (where the sun rises) and
+#: ``abajo`` is west.  The geographic pair (``al lago``, ``a la montaña``) is
+#: *not* — see :data:`CITY_ORIENTATION`.  The values here are the Managua
+#: defaults; pass a city to :func:`resolve_direction` to get the local ones.
+#: Getting any of these wrong silently rotates every parsed address, so they are
+#: asserted in the test-suite.
 DIRECTION_BEARINGS: dict[str, float] = {
     # north
     "norte": 0.0,
@@ -133,22 +179,58 @@ DIRECTION_BEARINGS: dict[str, float] = {
 }
 
 
-def resolve_direction(text: str) -> float | None:
+#: Direction phrases whose meaning depends on where the speaker is standing.
+_GEOGRAPHIC_PHRASES: dict[str, str] = {
+    "lago": "lago",
+    "al lago": "lago",
+    "hacia el lago": "lago",
+    "montana": "montana",
+    "a la montana": "montana",
+    "hacia la montana": "montana",
+}
+
+
+def lake_orientation_is_known(city: str | None) -> bool:
+    """True when "al lago" has been established for this city.
+
+    Callers use it to lower a candidate's confidence: an address in an unlisted
+    town resolved with the Managua orientation may be ninety degrees wrong.
+    """
+    if not city:
+        return False
+    from common.text import normalize
+
+    return normalize(city) in CITY_ORIENTATION
+
+
+def resolve_direction(text: str, city: str | None = None) -> float | None:
     """Map a Nicaraguan direction phrase to a bearing, or ``None``.
 
     Accepts the phrase with or without accents, articles and ``hacia``:
     ``"hacia la montaña"``, ``"al Sur"`` and ``"sur"`` all give 180°.
+
+    ``city`` matters for the geographic pair only: ``"al lago"`` is north in
+    Managua and east in Granada.  Without a city the Managua orientation is
+    used, which is right for most of the addresses this project sees and wrong
+    in a way :func:`lake_orientation_is_known` lets the caller report.
     """
     from common.text import normalize
 
     key = normalize(text)
-    if key in DIRECTION_BEARINGS:
-        return DIRECTION_BEARINGS[key]
-    # Strip leading prepositions/articles one at a time: "hacia el lago" -> "lago".
     tokens = key.split()
+    # Strip leading prepositions/articles one at a time: "hacia el lago" -> "lago".
+    candidates = [key]
     while tokens and tokens[0] in {"hacia", "al", "a", "el", "la", "para", "rumbo", "sobre"}:
         tokens = tokens[1:]
-        candidate = " ".join(tokens)
+        candidates.append(" ".join(tokens))
+
+    orientation = DEFAULT_ORIENTATION
+    if city:
+        orientation = CITY_ORIENTATION.get(normalize(city), DEFAULT_ORIENTATION)
+
+    for candidate in candidates:
+        if candidate in _GEOGRAPHIC_PHRASES:
+            return orientation[_GEOGRAPHIC_PHRASES[candidate]]
         if candidate in DIRECTION_BEARINGS:
             return DIRECTION_BEARINGS[candidate]
     return None
