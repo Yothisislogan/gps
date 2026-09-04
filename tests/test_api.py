@@ -518,6 +518,38 @@ class TestReverse:
         assert body["candidates"], "reverse must always answer something"
         assert "Güegüense" in body["candidates"][0]["label"]
 
+    def test_generates_the_address_a_nicaraguan_would_say(self, client):
+        # Two blocks south and one block west of the Rotonda El Güegüense. This
+        # is the share-sheet feature: coordinates are not how locations get sent
+        # here, sentences are.
+        from common.geo import destination_point
+
+        point = destination_point(*destination_point(12.1352, -86.2807, 180.0, 168.0), 270.0, 84.0)
+        body = client.get("/api/reverse", params={"lat": point[0], "lon": point[1]}).json()
+        candidate = body["candidates"][0]
+        assert candidate["method"] == "relative"
+        label = candidate["label"]
+        assert "Güegüense" in label
+        assert "al sur" in label
+        assert "abajo" in label
+        assert candidate["relative"]["offsets"][0]["bearing_deg"] == 180.0
+
+    def test_the_generated_address_parses_back_to_the_same_point(self, client):
+        # The string reverse geocoding emits must be one the forward geocoder
+        # understands, or the share sheet produces something nobody can use.
+        from common.geo import destination_point, haversine_m
+        from pipeline.geocode.relative_address import parse
+
+        point = destination_point(12.1352, -86.2807, 180.0, 168.0)
+        label = client.get("/api/reverse", params={"lat": point[0], "lon": point[1]}).json()[
+            "candidates"
+        ][0]["label"]
+
+        parsed = parse(label, city="Managua")
+        assert parsed is not None
+        back = client.get("/api/geocode", params={"q": label}).json()["candidates"][0]
+        assert haversine_m(point[0], point[1], back["lat"], back["lon"]) < 30
+
     def test_rejects_an_out_of_range_latitude(self, client):
         assert client.get("/api/reverse", params={"lat": 999, "lon": -86.2}).status_code == 422
 

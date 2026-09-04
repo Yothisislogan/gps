@@ -92,6 +92,11 @@ Style = Literal["colloquial", "formal"]
 #: How far a landmark may be and still anchor an address.  Fourteen blocks is
 #: already a long address; past that the listener stops counting and asks for a
 #: different reference, so we would rather return nothing than a 2 km hike.
+#:
+#: UNVERIFIED: the real ceiling is probably lower in dense Managua and higher on
+#: the carretera, where the next named thing may be a kilometre off.  Once the
+#: gazetteer is loaded, measure the distance distribution from real addresses in
+#: the ``alias`` table and consider making this depend on landmark density.
 DEFAULT_MAX_LANDMARK_DISTANCE_M = 1_200.0
 
 #: Below this, a hop is not worth saying.  The smallest unit anyone quotes is
@@ -127,6 +132,13 @@ METRE_STEP_FAR_M = 10.0
 #: else* — that is the whole point of anchoring on a landmark — but nearness is
 #: a separate term from proximity on purpose: within sight of the door, fame
 #: stops mattering because the reader can simply see the thing.
+#
+# UNVERIFIED: these four weights were set from the two anchor cases the plan
+# calls out (a rotonda at 900 m beats an anonymous colegio at 200 m; the colegio
+# wins again from 30 m) and nothing else.  The ``alias`` table is the experiment
+# that settles them: every time a user drags the pin on a generated address,
+# that is a landmark choice they rejected.  After the first few hundred, refit
+# these against which landmark the corrected string actually names.
 W_PROMINENCE = 0.42
 W_PROXIMITY = 0.19
 W_IDIOM = 0.15
@@ -159,6 +171,14 @@ _TRUNCATED_IDIOM = 0.3
 #: Direction words per register.  The colloquial set is Managua's topographic
 #: slang; note that south stays "al sur" even colloquially — "a la montaña" is
 #: understood but far rarer in speech than the other three.
+#:
+#: UNVERIFIED: outside the lake-is-north towns the colloquial register degrades
+#: to the cardinal words (see :func:`_direction`), which is safe but flat.  A
+#: Granadino may well *prefer* "al lago" for east, and emitting it would be
+#: correct there — but only for a reader who knows the town, and the string
+#: travels through WhatsApp without one.  Ask a few Granada users which they
+#: would rather receive before loosening this; if they want the local register,
+#: ``resolve()`` must first default its city from the matched landmark.
 _DIRECTION_WORDS: dict[str, dict[str, str]] = {
     "colloquial": {"north": "al lago", "south": "al sur", "east": "arriba", "west": "abajo"},
     "formal": {"north": "al norte", "south": "al sur", "east": "al este", "west": "al oeste"},
@@ -517,10 +537,11 @@ def _landmark_phrase(match: LandmarkMatch, *, with_article: bool) -> str:
         return name
     if leading is not None:
         # "El Güegüense" -> "Del Güegüense": Spanish contracts, and so does
-        # everyone writing the address on a business card.
-        contraction, _ = leading
-        rest = name.split(" ", 1)[1] if " " in name else name
-        return f"{contraction} {rest}" if " " in name else f"{contraction} {name}"
+        # everyone writing the address on a business card.  The parser strips
+        # leading articles anyway, so nothing is lost that it would have kept.
+        if " " not in name:
+            return name  # a landmark named only "El": leave it alone
+        return f"{leading} {name.split(' ', 1)[1]}"
     return f"{'De la' if _is_feminine(name) else 'Del'} {name}"
 
 
