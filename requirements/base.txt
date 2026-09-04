@@ -1,0 +1,5 @@
+# Shared by the API container and the pipeline jobs.
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3
+httpx>=0.27,<1
+python-dotenv>=1.0,<2

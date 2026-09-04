@@ -1,0 +1,41 @@
+# --- data artifacts (never committed; rebuilt by the pipeline) ---
+data/
+!data/.gitkeep
+*.osm.pbf
+*.pmtiles
+*.mbtiles
+*.parquet
+valhalla_tiles/
+valhalla_tiles.tar
+custom_files/
+
+# --- secrets ---
+.env
+*.env
+!.env.example
+!infra/.env.example
+secrets/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+htmlcov/
+.coverage
+.coverage.*
+
+# --- os / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# --- runtime ---
+*.log
+tmp/
