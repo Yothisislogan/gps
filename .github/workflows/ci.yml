@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push should cancel the first: nothing here is worth queueing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+
+      - name: Install
+        run: pip install -r requirements/dev.txt
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      # No network, no database, no Docker: those markers are excluded so a
+      # green CI means the offline suite is green, not that something was
+      # skipped quietly.
+      - name: Test
+        run: pytest -q -m "not network and not docker"
+
+  javascript:
+    name: navigation geometry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # node --test only; the app itself has no build step and no npm
+      # dependencies, deliberately (docs/PLAN.md section 6.1).
+      - name: Test
+        run: node --test "tests/js/*.test.mjs"
+
+  generated:
+    name: generated files are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+
+      - name: Install
+        run: pip install -r requirements/dev.txt
+
+      # The map style and the sprite sheet are generated from the taxonomy. A
+      # category added without regenerating them draws nothing on the map, and
+      # nobody notices until a user does.
+      - name: Map style
+        run: python3 scripts/build_style.py --check
+
+      - name: Sprite coverage
+        run: python3 scripts/build_sprites.py --check
+
+  data:
+    name: curated data files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+
+      - name: Install
+        run: pip install -r requirements/dev.txt
+
+      # Each file is validated by the repository's own loader, so the check
+      # cannot drift from how the code actually reads it. A missing file is a
+      # clear skip rather than a confusing failure.
+      - name: Validate
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+
+          checks = [
+              ("docs/taxonomy.csv", "pipeline.pois.taxonomy", "load_taxonomy"),
+              ("docs/carreteras.csv", "pipeline.geocode.kmpost", "load_highways"),
+              ("docs/golden_routes.json", "pipeline.qa.golden_routes", "load_cases"),
+          ]
+          failed = False
+          for path, module_name, function_name in checks:
+              if not pathlib.Path(path).exists():
+                  print(f"skip {path} (not present)")
+                  continue
+              try:
+                  module = __import__(module_name, fromlist=[function_name])
+                  result = getattr(module, function_name)()
+                  size = len(result[0]) if isinstance(result, tuple) else len(result)
+                  print(f"ok   {path}: {size} entries")
+              except Exception as error:
+                  print(f"FAIL {path}: {error}")
+                  failed = True
+          sys.exit(1 if failed else 0)
+          PY
