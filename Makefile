@@ -78,8 +78,14 @@ tiles:  ## Rebuild base.pmtiles from the current extract
 valhalla:  ## Rebuild the routing graph from the current extract
 	./pipeline/build_valhalla.sh
 
-pois:  ## Re-run POI ingest, conflation and export
-	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.conflate
+pois:  ## Re-run POI ingest, conflation, load and export
+	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.fetch_osm_pois
+	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.conflate \
+		--input /data/exports/src_osm.geojsonseq \
+		--input /data/exports/src_overture.geojsonseq \
+		--output /data/exports/pois_merged.geojsonseq \
+		--queue /data/exports/review_queue.json
+	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.load_pois
 	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.export_geojson
 
 index:  ## Rebuild the Meilisearch index

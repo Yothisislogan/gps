@@ -55,14 +55,30 @@ if [ "$SKIP_VALHALLA" -eq 0 ]; then
 fi
 
 if [ "$SKIP_POIS" -eq 0 ]; then
-  # Ingest -> conflate -> export -> tiles -> index. Each step reads what the
-  # previous one published, so a failure part-way leaves the last good export
-  # in place and the map keeps showing yesterday's POIs.
+  # ingest -> conflate -> load -> export -> tiles -> index.
+  #
+  # The database sits in the middle on purpose: it is the system of record once
+  # conflation has run, so moderation decisions and field verifications survive
+  # the next nightly build instead of being overwritten by it. Tiles and the
+  # search index are both derived from the database, never from the raw merge.
+  #
+  # Each step reads what the previous one published, so a failure part-way
+  # leaves the last good artifact in place and the map keeps showing yesterday's
+  # POIs rather than none.
   step "ingest osm pois"  py -m pipeline.pois.fetch_osm_pois
-  step "conflate pois"    py -m pipeline.pois.conflate
+
+  # Overture publishes monthly; pipeline/monthly_overture.sh refreshes it. The
+  # nightly run reuses whatever was last pulled, if anything.
+  OVERTURE_SRC="${EXPORT_DIR}/src_overture.geojsonseq"
+  CONFLATE_ARGS=(--input "${EXPORT_DIR}/src_osm.geojsonseq")
+  [ -s "$OVERTURE_SRC" ] && CONFLATE_ARGS+=(--input "$OVERTURE_SRC")
+  [ -s "${EXPORT_DIR}/src_survey.geojsonseq" ] && CONFLATE_ARGS+=(--input "${EXPORT_DIR}/src_survey.geojsonseq")
+
+  step "conflate pois"    py -m pipeline.pois.conflate                             "${CONFLATE_ARGS[@]}"                             --output "${EXPORT_DIR}/pois_merged.geojsonseq"                             --queue "${EXPORT_DIR}/review_queue.json"
+  step "load pois"        py -m pipeline.pois.load_pois
+  step "build gazetteer"  py -m pipeline.geocode.gazetteer_build
   step "export pois"      py -m pipeline.pois.export_geojson
   step "build poi tiles"  "${REPO_ROOT}/pipeline/build_tiles.sh" --pois-only
-  step "build gazetteer"  py -m pipeline.geocode.gazetteer_build
   step "reindex search"   py -m pipeline.search.build_index
 fi
 

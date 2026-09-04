@@ -21,8 +21,15 @@ log "fetching Overture places"
 (cd "$REPO_ROOT" && python3 -m pipeline.pois.fetch_overture ${RELEASE:+--release "$RELEASE"}) \
   || die "overture fetch failed"
 
-log "re-conflating changed records"
-(cd "$REPO_ROOT" && python3 -m pipeline.pois.conflate --incremental) || die "conflation failed"
+log "re-conflating"
+(cd "$REPO_ROOT" && python3 -m pipeline.pois.conflate \
+    --input "${EXPORT_DIR}/src_osm.geojsonseq" \
+    --input "${EXPORT_DIR}/src_overture.geojsonseq" \
+    --output "${EXPORT_DIR}/pois_merged.geojsonseq" \
+    --queue "${EXPORT_DIR}/review_queue.json") || die "conflation failed"
+
+log "loading into postgis"
+(cd "$REPO_ROOT" && python3 -m pipeline.pois.load_pois) || die "load failed"
 
 log "exporting and republishing"
 (cd "$REPO_ROOT" && python3 -m pipeline.pois.export_geojson) || die "export failed"
