@@ -27,8 +27,11 @@ tests/          pytest; unit tests never touch the network or a database
 ```
 
 **Import direction is one-way:** `common` ← `pipeline`, `common` ← `api`.
-`api` never imports `pipeline`; `pipeline` never imports `api`. Nothing in
-`common` may import either.
+`pipeline` never imports `api`. Nothing in `common` may import either.
+
+One documented exception: `api` may import `pipeline.geocode.*`, which is pure
+(no I/O, no database, stdlib + `common` only) and is where the address grammar
+lives. `api` imports nothing else from `pipeline`.
 
 ## 2. Conventions
 
