@@ -110,11 +110,26 @@ class TestPayloadShape:
         # Valhalla ignores unknown costing keys silently, so a typo here would
         # never surface as an error — only as routes that ignore the setting.
         known = {
-            "use_tracks", "use_living_streets", "service_penalty", "maneuver_penalty",
-            "use_ferry", "use_highways", "use_tolls", "country_crossing_penalty",
-            "shortest", "exclude_unpaved", "top_speed", "alley_penalty", "gate_penalty",
-            "destination_only_penalty", "closure_factor", "speed_penalty_factor",
-            "service_factor", "use_distance", "ignore_closures", "fixed_speed",
+            "use_tracks",
+            "use_living_streets",
+            "service_penalty",
+            "maneuver_penalty",
+            "use_ferry",
+            "use_highways",
+            "use_tolls",
+            "country_crossing_penalty",
+            "shortest",
+            "exclude_unpaved",
+            "top_speed",
+            "alley_penalty",
+            "gate_penalty",
+            "destination_only_penalty",
+            "closure_factor",
+            "speed_penalty_factor",
+            "service_factor",
+            "use_distance",
+            "ignore_closures",
+            "fixed_speed",
         }
         for options in (
             build_route_payload([MGA, GRANADA])["costing_options"]["auto"],
@@ -276,10 +291,16 @@ class TestClient:
     def test_snap_falls_back_to_nodes(self):
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
-                200, json=[{"edges": [], "nodes": [{"correlated_lat": 12.14, "correlated_lon": -86.17}]}]
+                200,
+                json=[
+                    {"edges": [], "nodes": [{"correlated_lat": 12.14, "correlated_lon": -86.17}]}
+                ],
             )
 
-        assert ValhallaClient(client=mock_client(handler)).snap(12.1415, -86.1682) == (12.14, -86.17)
+        assert ValhallaClient(client=mock_client(handler)).snap(12.1415, -86.1682) == (
+            12.14,
+            -86.17,
+        )
 
     def test_snap_returns_none_when_nothing_is_nearby(self):
         def handler(request: httpx.Request) -> httpx.Response:

@@ -26,7 +26,7 @@ Nothing here is finished. See [what works today](#what-works-today).
 git clone <this repo> && cd nicanav
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements/dev.txt
-make test          # 891 tests, no network, no database, no Docker
+make test          # 919 tests, no network, no database, no Docker
 ```
 
 To run the stack on a server:
@@ -73,7 +73,7 @@ month.
 | Map style, sprite sheet | **Built and generated** from the taxonomy |
 | QA: golden routes, KPIs, disconnection check | **Built and tested** |
 | Compose stack, nginx, nightly pipeline, backups | **Written**, *never run against real services* |
-| Admin moderation UI | **Not built.** The schema, the queues and the API are there; the pages are not |
+| Admin moderation UI | **Built and tested** with fakes: review queue, alias approval, closures, POI editor |
 | Field data programme (§8 of the plan) | **Not started** — this is the moat and it is driving time, not code |
 | Native Android / iOS | **Not started** (plan §6.2) |
 
@@ -95,7 +95,7 @@ that walks them, and `make verify` automates most of it.
 | `infra/` | Compose stack, nginx, Dockerfiles, Valhalla config, cron |
 | `scripts/` | One-shot tools: the curation circle, style and sprite generation, backups, deploy verification |
 | `docs/` | The plan, the interface contract, and the curated data: taxonomy, gazetteer, carreteras, golden routes |
-| `tests/` | 891 Python tests plus 33 `node --test` cases for the nav geometry |
+| `tests/` | 919 Python tests plus 33 `node --test` cases for the nav geometry |
 
 ## Data and licences
 
