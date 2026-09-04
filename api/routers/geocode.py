@@ -368,7 +368,11 @@ async def reverse(
     reverse_module = _reverse_module()
 
     if reverse_module is not None and landmarks:
-        address = reverse_module.reverse(lat, lon, landmarks, city=city)
+        try:
+            address = reverse_module.reverse(lat, lon, landmarks, city=city)
+        except Exception:
+            log.warning("reverse addressing failed for %.5f,%.5f", lat, lon, exc_info=True)
+            address = None
         if address is not None:
             return GeocodeResponse(
                 query=f"{lat:.5f},{lon:.5f}",

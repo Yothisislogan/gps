@@ -445,7 +445,74 @@ class TestGeocode:
         assert confidences == sorted(confidences, reverse=True)
 
 
+class TestKmPost:
+    """ "Km 12.5 Carretera a Masaya" is a real Nicaraguan address."""
+
+    def _stub_highway(self, database):
+        # A straight synthetic Carretera a Masaya running south-east from
+        # Managua, long enough that km 12.5 lands on it.
+        from common.geo import destination_point
+
+        start = (12.1150, -86.2504)
+        end = destination_point(*start, 135.0, 30_000)
+        database.highways["carretera_a_masaya"] = [
+            [start[1], start[0]],
+            [end[1], end[0]],
+        ]
+
+    def test_resolves_a_km_post(self, client, app_and_fakes):
+        _, database, _, _ = app_and_fakes
+        self._stub_highway(database)
+        body = client.get("/api/geocode", params={"q": "Km 12.5 Carretera a Masaya"}).json()
+        assert body["candidates"], body
+        candidate = body["candidates"][0]
+        assert candidate["method"] == "kmpost"
+
+        from common.geo import haversine_m
+
+        assert haversine_m(12.1150, -86.2504, candidate["lat"], candidate["lon"]) == pytest.approx(
+            12_500, rel=0.05
+        )
+
+    def test_unknown_highway_returns_no_kmpost_candidate(self, client):
+        # No highway geometry is loaded in the fake database.
+        body = client.get("/api/geocode", params={"q": "Km 5 Carretera a Ninguna Parte"}).json()
+        assert all(c["method"] != "kmpost" for c in body["candidates"])
+
+    def test_a_broken_kmpost_module_does_not_break_the_cascade(self, client, monkeypatch):
+        # Every geocoding strategy is wrapped: one failing must not take the
+        # others down, because a user typing an address gets one shot.
+        import api.routers.geocode as geocode_router
+
+        class Exploding:
+            @staticmethod
+            def looks_like_kmpost(_text):
+                return True
+
+            @staticmethod
+            def parse(_text):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(geocode_router, "_kmpost_module", lambda: Exploding)
+        body = client.get(
+            "/api/geocode", params={"q": "De la Rotonda El Güegüense, 2c al sur"}
+        ).json()
+        assert body["candidates"], "the relative-address path must still answer"
+
+
 class TestReverse:
+    def test_a_broken_reverse_module_falls_back(self, client, monkeypatch):
+        import api.routers.geocode as geocode_router
+
+        class Exploding:
+            @staticmethod
+            def reverse(*_args, **_kwargs):
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(geocode_router, "_reverse_module", lambda: Exploding)
+        body = client.get("/api/reverse", params={"lat": 12.1352, "lon": -86.2807}).json()
+        assert body["candidates"], "reverse must always answer something"
+
     def test_falls_back_to_the_nearest_landmark(self, client):
         body = client.get("/api/reverse", params={"lat": 12.1352, "lon": -86.2807}).json()
         assert body["candidates"], "reverse must always answer something"
