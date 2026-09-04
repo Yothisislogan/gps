@@ -1,0 +1,39 @@
+{
+  "name": "nicanav — mapa de Nicaragua",
+  "short_name": "nicanav",
+  "description": "Mapa, búsqueda y navegación paso a paso para Nicaragua, con direcciones como las decimos aquí.",
+  "lang": "es-NI",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f3ee",
+  "theme_color": "#f6f3ee",
+  "categories": ["navigation", "travel", "maps"],
+  "icons": [
+    { "src": "/icons/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Gasolineras cerca",
+      "short_name": "Gasolina",
+      "url": "/?chip=gasolinera",
+      "description": "Bombas cercanas"
+    },
+    {
+      "name": "Vulcanización cerca",
+      "short_name": "Vulca",
+      "url": "/?chip=vulcanizacion",
+      "description": "Reparación de llantas cercana"
+    },
+    {
+      "name": "Cajeros cerca",
+      "short_name": "Cajeros",
+      "url": "/?chip=cajero",
+      "description": "Cajeros automáticos cercanos"
+    }
+  ]
+}

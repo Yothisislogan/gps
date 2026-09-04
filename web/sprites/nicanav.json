@@ -1,0 +1,554 @@
+{
+  "nicanav-aeropuerto": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 0
+  },
+  "nicanav-banco": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 0
+  },
+  "nicanav-bar": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 0
+  },
+  "nicanav-bomberos": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 0
+  },
+  "nicanav-buffet": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 0
+  },
+  "nicanav-cafe": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 0
+  },
+  "nicanav-cafetin": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 0
+  },
+  "nicanav-cajero": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 0
+  },
+  "nicanav-casa_de_cambio": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 0
+  },
+  "nicanav-cementerio": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 26
+  },
+  "nicanav-centro_comercial": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 26
+  },
+  "nicanav-clinica": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 26
+  },
+  "nicanav-comedor": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 26
+  },
+  "nicanav-comida_rapida": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 26
+  },
+  "nicanav-correo": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 26
+  },
+  "nicanav-dentista": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 26
+  },
+  "nicanav-discoteca": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 26
+  },
+  "nicanav-distribuidora": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 26
+  },
+  "nicanav-embajada": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 52
+  },
+  "nicanav-escuela": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 52
+  },
+  "nicanav-estadio": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 52
+  },
+  "nicanav-farmacia": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 52
+  },
+  "nicanav-ferreteria": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 52
+  },
+  "nicanav-fritanga": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 52
+  },
+  "nicanav-gasolinera": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 52
+  },
+  "nicanav-gimnasio": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 52
+  },
+  "nicanav-heladeria": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 52
+  },
+  "nicanav-hospital": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 78
+  },
+  "nicanav-hostal": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 78
+  },
+  "nicanav-hotel": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 78
+  },
+  "nicanav-hotel_paso": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 78
+  },
+  "nicanav-iglesia": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 78
+  },
+  "nicanav-laguna": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 78
+  },
+  "nicanav-lavado_autos": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 78
+  },
+  "nicanav-lavanderia": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 78
+  },
+  "nicanav-libreria": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 78
+  },
+  "nicanav-mercado": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 104
+  },
+  "nicanav-mirador": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 104
+  },
+  "nicanav-monumento": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 104
+  },
+  "nicanav-museo": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 104
+  },
+  "nicanav-oneway": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 104
+  },
+  "nicanav-otro": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 104
+  },
+  "nicanav-panaderia": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 104
+  },
+  "nicanav-parada_bus": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 104
+  },
+  "nicanav-parque": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 104
+  },
+  "nicanav-parqueo": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 130
+  },
+  "nicanav-pizzeria": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 130
+  },
+  "nicanav-playa": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 130
+  },
+  "nicanav-policia": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 130
+  },
+  "nicanav-puente": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 130
+  },
+  "nicanav-puerto": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 130
+  },
+  "nicanav-pulperia": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 130
+  },
+  "nicanav-remesas": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 130
+  },
+  "nicanav-reposteria": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 130
+  },
+  "nicanav-repuestos": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 156
+  },
+  "nicanav-restaurante": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 156
+  },
+  "nicanav-rotonda": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 156
+  },
+  "nicanav-salon_belleza": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 156
+  },
+  "nicanav-semaforo": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 156
+  },
+  "nicanav-sitio_turistico": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 156
+  },
+  "nicanav-supermercado": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 156,
+    "y": 156
+  },
+  "nicanav-taller_mecanico": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 182,
+    "y": 156
+  },
+  "nicanav-taxi": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 208,
+    "y": 156
+  },
+  "nicanav-terminal_buses": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 0,
+    "y": 182
+  },
+  "nicanav-tienda": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 26,
+    "y": 182
+  },
+  "nicanav-universidad": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 52,
+    "y": 182
+  },
+  "nicanav-veterinaria": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 78,
+    "y": 182
+  },
+  "nicanav-volcan": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 104,
+    "y": 182
+  },
+  "nicanav-vulcanizacion": {
+    "height": 24,
+    "pixelRatio": 1,
+    "sdf": true,
+    "width": 24,
+    "x": 130,
+    "y": 182
+  }
+}

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<!--
+  nicanav — mapa y navegación abierta para Nicaragua.
+
+  viewport-fit=cover matters here: this is used on a dash mount, on phones with
+  notches, in landscape. The safe-area insets in app.css do the rest.
+  user-scalable=no is deliberate: a pinch meant for the map must never zoom the
+  chrome while somebody is driving.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141821" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Mapa, búsqueda y navegación paso a paso para Nicaragua. Direcciones como las decimos aquí: de la rotonda, 2c al sur.">
+<meta name="color-scheme" content="light dark">
+<title>nicanav — mapa de Nicaragua</title>
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/app.css">
+
+<!-- Deployment writes this; it carries the API and tile URLs. -->
+<script src="/config.js"></script>
+<!--
+  pmtiles ships an IIFE build with its dependencies inlined, which is what a
+  no-bundler page needs: the ESM entry leaves a bare `fflate` import that a
+  browser cannot resolve. It must load before any module constructs a Map.
+-->
+<script src="https://cdn.jsdelivr.net/npm/pmtiles@4.5.0/dist/pmtiles.js"></script>
+<!-- MapLibre v6 is ESM-only and is imported dynamically by map.js. -->
+<link rel="modulepreload" href="https://unpkg.com/maplibre-gl@6.7.0/dist/maplibre-gl.mjs">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.7.0/dist/maplibre-gl.css">
+</head>
+
+<body>
+  <!-- The map is the app. Everything else floats over it. -->
+  <div id="map" class="map" role="application" aria-label="Mapa de Nicaragua"></div>
+  <!-- Shown instead of the map when WebGL2 is unavailable (old low-end Android):
+       a legible explanation beats a white screen. -->
+  <div id="map-fallback" class="fatal" hidden></div>
+
+  <noscript>
+    <div class="fatal">
+      <h1>nicanav necesita JavaScript</h1>
+      <p>El mapa no puede dibujarse sin JavaScript activado.</p>
+    </div>
+  </noscript>
+
+  <header class="topbar" id="topbar">
+    <form class="searchbar" id="search-form" role="search" autocomplete="off">
+      <button type="button" class="icon-button" id="search-back" hidden aria-label="Volver">
+        <span aria-hidden="true">←</span>
+      </button>
+      <span class="searchbar__glyph" aria-hidden="true">⌕</span>
+      <input
+        id="search-input"
+        class="searchbar__input"
+        type="search"
+        name="q"
+        enterkeyhint="search"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        placeholder="Buscar lugar o dirección"
+        aria-label="Buscar lugar o dirección"
+        aria-controls="search-results"
+        aria-autocomplete="list">
+      <button type="button" class="icon-button" id="search-clear" hidden aria-label="Limpiar">
+        <span aria-hidden="true">×</span>
+      </button>
+    </form>
+
+    <div class="chips" id="chips" role="group" aria-label="Categorías"></div>
+  </header>
+
+  <!-- Results replace the map only while the user is actually searching. -->
+  <section class="results" id="search-results" hidden aria-live="polite"></section>
+
+  <!-- nav.js owns this; it is empty until navigation starts. -->
+  <div id="nav-root" class="nav-root" hidden></div>
+
+  <div class="fabs" id="fabs">
+    <button type="button" class="fab" id="locate" aria-label="Mi ubicación">
+      <span aria-hidden="true">◎</span>
+    </button>
+    <button type="button" class="fab fab--small" id="report-button" aria-label="Reportar un problema">
+      <span aria-hidden="true">⚑</span>
+    </button>
+    <button type="button" class="fab fab--small" id="share-button" aria-label="Compartir esta vista">
+      <span aria-hidden="true">↗</span>
+    </button>
+    <button type="button" class="fab fab--small" id="settings-button" aria-label="Ajustes">
+      <span aria-hidden="true">⚙</span>
+    </button>
+  </div>
+
+  <!-- ui.js binds to these by id; the markup lives here so the shell paints
+       before any module has loaded. -->
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <div class="sheet" id="sheet" role="dialog" aria-modal="false" aria-label="Detalle" hidden>
+    <div class="sheet__grab sheet-grip" role="separator" aria-label="Arrastrar"></div>
+    <div class="sheet__head">
+      <h2 class="sheet__title sheet-title"></h2>
+      <button type="button" class="icon-button sheet-close" aria-label="Cerrar">
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+    <div class="sheet__body sheet-body"></div>
+  </div>
+
+  <footer class="attribution">
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
+    ·
+    <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture</a>
+    ·
+    <button type="button" class="linkish" id="about-button">Acerca de</button>
+  </footer>
+
+  <!-- map.js is the entry point: it boots the map and wires the shell. -->
+  <script type="module" src="/js/map.js"></script>
+</body>
+</html>
