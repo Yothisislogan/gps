@@ -48,11 +48,17 @@ log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TAXONOMY_PATH = REPO_ROOT / "docs" / "taxonomy.csv"
 
-# UNVERIFIED: the ``overture_categories`` column of docs/taxonomy.csv was written from the
-# published *shape* of the Overture Places taxonomy; the authoritative category list ships
-# with each Overture release and is unreachable from this build environment.  On the first
-# ingest, cross-check every string in that column against the release CSV and fail the job on
-# any that does not exist — a silently unmatched category sends real POIs to `otro`.
+# The ``overture_categories`` column of docs/taxonomy.csv is written as dotted *paths*
+# (``eat_and_drink.restaurant``) because the hierarchy is what makes the parent fallback below
+# work.  The data itself carries only the **leaf token** (``restaurant``): Overture's schema
+# forbids dots in a category (``^[a-z0-9]+(_[a-z0-9]+)*$``), and the dotted form appears only in
+# the taxonomy CSV's own rendering of the hierarchy.  So the loader indexes both the full path
+# and its leaf, and :func:`category_for_overture` accepts either.
+#
+# UNVERIFIED: the individual strings in that column were written from the published shape of the
+# taxonomy, not from the release's category CSV, which is unreachable from this build
+# environment.  On the first ingest, cross-check every leaf against the release list and fail the
+# job on any that does not exist — a silently unmatched category sends real POIs to `otro`.
 # UNVERIFIED: a handful of OSM selectors are plausible but unconfirmed against live taginfo
 # counts for Nicaragua: ``water=lagoon`` (lagunas may be plain ``water=lake``),
 # ``cuisine=nicaraguan`` (fritangas may be untagged for cuisine), ``shop=money_transfer``
@@ -280,6 +286,7 @@ class _Taxonomy:
     by_selector: Mapping[tuple[str, str], tuple[Category, ...]]
     #: Overture dotted string -> category id (first claiming row wins).
     by_overture: Mapping[str, str]
+    by_overture_leaf: Mapping[str, str]
 
 
 def _fail(row_number: int, category_id: str, problem: str) -> ValueError:
@@ -340,6 +347,11 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
             f"taxonomy {path} header is {header!r}; docs/SPEC.md section 7 requires {_COLUMNS!r}"
         )
     return list(reader)
+
+
+#: Depth of the shortest dotted path that claimed each leaf token, used to break
+#: collisions in favour of the more general category.
+_leaf_depth: dict[str, int] = {}
 
 
 def _build(path: Path, *, require_canonical: bool) -> _Taxonomy:
@@ -410,6 +422,7 @@ def _build(path: Path, *, require_canonical: bool) -> _Taxonomy:
 
     by_selector: dict[tuple[str, str], list[Category]] = {}
     by_overture: dict[str, str] = {}
+    by_overture_leaf: dict[str, str] = {}
     for category in categories:
         for selector in category.osm_selectors:
             by_selector.setdefault(selector, []).append(category)
@@ -417,12 +430,21 @@ def _build(path: Path, *, require_canonical: bool) -> _Taxonomy:
             # First row claiming a string wins, which is why row order is documented as
             # load-bearing in the CSV header.
             by_overture.setdefault(overture, category.category_id)
+            leaf = overture.rsplit(".", 1)[-1]
+            # On a leaf collision the shortest (most general) path wins, so
+            # "cafe" resolves to the cafe row rather than to a sub-category that
+            # happens to share the leaf token.
+            existing = by_overture_leaf.get(leaf)
+            if existing is None or overture.count(".") < _leaf_depth.get(leaf, 99):
+                by_overture_leaf[leaf] = category.category_id
+                _leaf_depth[leaf] = overture.count(".")
 
     return _Taxonomy(
         categories=tuple(categories),
         by_id={category.category_id: category for category in categories},
         by_selector={key: tuple(value) for key, value in by_selector.items()},
         by_overture=by_overture,
+        by_overture_leaf=by_overture_leaf,
     )
 
 
@@ -549,11 +571,12 @@ def category_for_osm(tags: Mapping[str, str], path: str | Path | None = None) ->
 def category_for_overture(category: str | None, path: str | Path | None = None) -> str | None:
     """Map an Overture Places category string to a category id, or ``None``.
 
-    Overture categories are dotted and hierarchical
-    (``eat_and_drink.restaurant.pizza_restaurant``).  An unknown leaf falls back to its parent,
-    so a new Overture release adding ``…pizza_restaurant.neapolitan`` still lands in
-    ``pizzeria`` instead of dropping to `otro` — the monthly refresh must not silently lose a
-    whole leaf of the tree.
+    Accepts both forms.  Overture *data* carries a bare leaf token (``restaurant``) — its
+    schema forbids dots in a category — while the taxonomy CSV lists the dotted hierarchy
+    (``eat_and_drink.restaurant.pizza_restaurant``) because the hierarchy is what makes the
+    parent fallback useful: a new release adding ``…pizza_restaurant.neapolitan`` still lands in
+    ``pizzeria`` instead of dropping to ``otro``, and the monthly refresh does not silently lose
+    a whole leaf of the tree.
     """
     if not category:
         return None
@@ -566,4 +589,8 @@ def category_for_overture(category: str | None, path: str | Path | None = None) 
         if hit is not None:
             return hit
         parts.pop()
-    return None
+
+    # The data carries a bare leaf token, so fall back to the leaf index.  This
+    # is the path that actually fires in production; the dotted lookup above
+    # exists for the taxonomy CSV's own hierarchical form and for tests.
+    return taxonomy.by_overture_leaf.get(category.strip().lower().rsplit(".", 1)[-1])

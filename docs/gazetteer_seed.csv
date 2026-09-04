@@ -1,0 +1,164 @@
+# nicanav landmark gazetteer seed -- the curated half of pipeline/geocode/gazetteer_build.py.
+#
+# These are the points Nicaraguans actually navigate by and that OSM either does
+# not carry at all ("donde fue el Cine Cabrera") or carries without the name
+# people use ("Rotonda Metrocentro" is officially Rotonda Ruben Dario).
+#
+# ACCURACY CAVEAT -- READ BEFORE TRUSTING A COORDINATE
+# Every coordinate here was placed from documentary knowledge of Managua and the
+# Pacific towns, not from a survey.  Treat them as accurate to roughly 100-300 m
+# and, for the rows whose `note` says "coordenada por verificar", to no better
+# than 500 m.  A wrong landmark position silently rotates or shifts every
+# relative address built on it, so the field programme re-measures these with a
+# handheld fix before the row is promoted above popularity 0.6.  OSM wins on
+# position wherever it has the same landmark (see gazetteer_build.merge rules) --
+# these coordinates are the fallback, not the authority.  `former` rows have no
+# OSM counterpart by definition, so their coordinates stay as written here.
+#
+# Columns:
+#   name        display name, Spanish, as a person would say it
+#   name_alt    ";"-separated alternative spellings and nicknames
+#   kind        see GAZETTEER_KINDS in pipeline/geocode/gazetteer_build.py
+#   lat,lon     WGS84 degrees, (lat, lon) order
+#   city        municipality, used to pick the cuadra length and to block merges
+#   former      true when the landmark no longer exists but is still spoken
+#   era         free text: when it existed / when the name applied
+#   popularity  0..1, how often people actually navigate by it (not how famous)
+#   note        why it matters, or what needs verifying.  No commas: use ";".
+#
+name,name_alt,kind,lat,lon,city,former,era,popularity,note
+Rotonda El Güegüense,Rotonda Plaza España;El Güegüense;Rotonda Gueguense,rotonda,12.1352,-86.2807,Managua,false,,0.95,Pista Juan Pablo II en Bolonia; casi todo el mundo la llama Plaza España
+Rotonda Rubén Darío,Rotonda Metrocentro;Rotonda de Metrocentro,rotonda,12.1281,-86.2681,Managua,false,,0.98,Inicio de la Carretera a Masaya junto a Metrocentro; el nombre oficial casi no se usa
+Rotonda Centroamérica,Rotonda Centro América,rotonda,12.1094,-86.2545,Managua,false,,0.95,Carretera a Masaya con la Pista Juan Pablo II
+Rotonda Jean Paul Genie,Rotonda Genie;La Genie,rotonda,12.1003,-86.2452,Managua,false,,0.9,Carretera a Masaya con la Pista Jean Paul Genie
+Rotonda Bello Horizonte,Rotonda de Bello Horizonte,rotonda,12.1332,-86.2318,Managua,false,,0.8,Distrito V al oriente; coordenada por verificar
+Rotonda Cristo Rey,,rotonda,12.1420,-86.2843,Managua,false,,0.75,Pista Juan Pablo II frente a la iglesia Cristo Rey; coordenada por verificar
+Rotonda Santo Domingo,Rotonda de Santo Domingo,rotonda,12.0895,-86.2348,Managua,false,,0.6,Carretera a Masaya cerca de Galerías Santo Domingo; coordenada por verificar
+Rotonda La Virgen,,rotonda,12.1128,-86.2620,Managua,false,,0.55,Coordenada por verificar; confirmar cuál rotonda recibe este nombre en el habla
+Rotonda Universitaria,Rotonda Rigoberto López Pérez,rotonda,12.1373,-86.2673,Managua,false,,0.7,Avenida Universitaria junto a la UNI; coordenada por verificar
+Rotonda El Periodista,Rotonda del Periodista,rotonda,12.1372,-86.2892,Managua,false,,0.65,Occidente de Managua; coordenada por verificar
+Rotonda Hugo Chávez,Rotonda Chávez;Rotonda de la Avenida Bolívar,rotonda,12.1455,-86.2734,Managua,false,desde 2013,0.7,Avenida Bolívar con Pista Juan Pablo II; la estatua es la referencia visual
+Rotonda Portezuelo,,rotonda,12.1372,-86.1975,Managua,false,,0.6,Carretera Norte al oriente; coordenada por verificar
+Rotonda Larreynaga,,rotonda,12.1458,-86.2422,Managua,false,,0.6,Pista Larreynaga; coordenada por verificar
+Rotonda Nejapa,,rotonda,12.1330,-86.3150,Managua,false,,0.5,Carretera Nueva a León junto a la Laguna de Nejapa; coordenada por verificar
+Semáforos del Zumen,El Zumen;Los semáforos del Zumen,semaforo,12.1318,-86.2907,Managua,false,,0.7,Pista Juan Pablo II en el occidente; referencia constante en direcciones
+Semáforos de Villa Fontana,Los semáforos de Villa Fontana,semaforo,12.1155,-86.2520,Managua,false,,0.6,Entrada a Villa Fontana; coordenada por verificar
+Semáforos de Rubenia,Rubenia;Los semáforos de Rubenia,semaforo,12.1408,-86.2312,Managua,false,,0.7,Cruce de la Pista Larreynaga con la Pista Sabana Grande; coordenada por verificar
+Semáforos de la Racachaca,La Racachaca,semaforo,12.1518,-86.2645,Managua,false,,0.6,Al costado del Mercado Oriental; coordenada por verificar
+Semáforos del Colonial Los Robles,El Colonial Los Robles,semaforo,12.1180,-86.2600,Managua,false,,0.55,El supermercado nombra la esquina; coordenada por verificar
+Semáforos de la Tenderí,La Tenderí,semaforo,12.1425,-86.2265,Managua,false,,0.5,Barrio Tenderí sobre la Pista Larreynaga; coordenada por verificar
+Gancho de Camino,El Gancho de Camino,referencia,12.1487,-86.2565,Managua,false,,0.6,Entrada tradicional al Mercado Oriental; coordenada por verificar
+La Subasta,Los semáforos de La Subasta,referencia,12.1435,-86.2145,Managua,false,,0.65,Carretera Norte; la antigua subasta de ganado nombra todo el sector
+Puente El Edén,El Edén,puente,12.1478,-86.2510,Managua,false,,0.5,Referencia del barrio El Edén; coordenada por verificar
+Mercado Roberto Huembes,Mercado Huembes;Huembes;Mercado Central Roberto Huembes,mercado,12.1214,-86.2445,Managua,false,,0.95,Mercado y terminal hacia el sur y el oriente del país
+Mercado Oriental,El Oriental,mercado,12.1500,-86.2585,Managua,false,,0.9,El mercado más grande de Centroamérica; el punto es el centro aproximado de un área enorme
+Mercado Israel Lewites,Mercado Boer;Israel Lewites,mercado,12.1302,-86.2958,Managua,false,,0.85,Mercado y terminal hacia el occidente y Carazo
+Mercado Mayoreo,El Mayoreo,mercado,12.1466,-86.1858,Managua,false,,0.85,Mercado y terminal hacia el norte y el Caribe
+Mercado Iván Montenegro,Iván Montenegro,mercado,12.1276,-86.2075,Managua,false,,0.8,Distrito VI; coordenada por verificar
+Centro Comercial Metrocentro,Metrocentro;Metrocentro Managua,centro_comercial,12.1246,-86.2686,Managua,false,,1.0,El punto de referencia más usado de Managua
+Galerías Santo Domingo,Galerías;Centro Comercial Galerías Santo Domingo,centro_comercial,12.0929,-86.2384,Managua,false,,0.9,Carretera a Masaya
+Multicentro Las Américas,Las Américas,centro_comercial,12.1290,-86.2100,Managua,false,,0.7,Distrito VI; coordenada por verificar
+Plaza Inter,Centro Comercial Plaza Inter,centro_comercial,12.1487,-86.2745,Managua,false,,0.8,Frente al antiguo Hotel Intercontinental
+Camino de Oriente,Centro Comercial Camino de Oriente,centro_comercial,12.1063,-86.2519,Managua,false,,0.8,Carretera a Masaya; coordenada por verificar
+Centro Comercial Linda Vista,,centro_comercial,12.1400,-86.2905,Managua,false,,0.6,Occidente de Managua; coordenada por verificar
+Plaza España,Centro Comercial Plaza España,centro_comercial,12.1345,-86.2818,Managua,false,,0.85,El centro comercial que le da el nombre popular a la Rotonda El Güegüense
+Centro Comercial Managua,El Centro Comercial,centro_comercial,12.1362,-86.2515,Managua,false,,0.6,Ciudad Jardín; coordenada por verificar
+Catedral de Santiago de Managua,Catedral Vieja;Antigua Catedral,iglesia,12.1541,-86.2741,Managua,false,en uso 1938-1972,0.85,Ruinas en la Plaza de la Revolución; dañada por el terremoto de 1972 y nunca reabierta
+Catedral Metropolitana de la Purísima Concepción,Nueva Catedral;Catedral Nueva,iglesia,12.1287,-86.2612,Managua,false,desde 1993,0.85,La de las cúpulas sobre la Pista Juan Pablo II
+Teatro Nacional Rubén Darío,Teatro Rubén Darío;TNRD,edificio,12.1600,-86.2775,Managua,false,,0.8,Zona monumental frente al lago
+Palacio Nacional de la Cultura,Palacio Nacional,edificio,12.1546,-86.2745,Managua,false,,0.75,Plaza de la Revolución
+Plaza de la Revolución,Plaza de la República,plaza,12.1552,-86.2748,Managua,false,,0.7,Centro histórico
+Plaza de la Fe Juan Pablo II,Plaza de la Fe,plaza,12.1573,-86.2760,Managua,false,,0.6,Junto al malecón
+Puerto Salvador Allende,El Puerto;Malecón de Managua,referencia,12.1620,-86.2782,Managua,false,desde 2008,0.85,Malecón sobre el lago Xolotlán
+Parque Luis Alfonso Velásquez Flores,Parque Luis Alfonso,parque,12.1509,-86.2748,Managua,false,,0.6,Avenida Bolívar
+Loma de Tiscapa,Monumento a Sandino;La Loma,monumento,12.1440,-86.2731,Managua,false,,0.8,La silueta de Sandino se ve desde media ciudad
+Laguna de Tiscapa,,laguna,12.1455,-86.2712,Managua,false,,0.6,Cráter dentro de la ciudad
+Estadio Nacional Dennis Martínez,Estadio Nacional;Estadio Denis Martínez,estadio,12.1568,-86.2827,Managua,false,desde 2017,0.8,Estadio de béisbol junto al centro histórico
+Asamblea Nacional,,edificio,12.1533,-86.2725,Managua,false,,0.5,Centro histórico
+Iglesia Santo Domingo de las Sierritas,Las Sierritas,iglesia,12.1063,-86.2938,Managua,false,,0.55,Origen de las fiestas de Santo Domingo; coordenada por verificar
+Universidad Centroamericana,UCA,universidad,12.1300,-86.2723,Managua,false,,0.85,La parada de buses de la UCA es una referencia por sí sola
+Universidad Nacional de Ingeniería,UNI;Recinto Universitario Simón Bolívar,universidad,12.1402,-86.2657,Managua,false,,0.7,Avenida Universitaria; coordenada por verificar
+Universidad Nacional Autónoma de Nicaragua,UNAN;UNAN-Managua;Recinto Rubén Darío,universidad,12.1085,-86.2700,Managua,false,,0.75,Villa Fontana; coordenada por verificar
+Universidad Americana,UAM,universidad,12.1272,-86.2731,Managua,false,,0.6,Contiguo a la UCA
+Universidad Politécnica de Nicaragua,UPOLI,universidad,12.1428,-86.2331,Managua,false,,0.55,Carretera Norte; coordenada por verificar
+Hospital Bautista,Hospital Bautista de Managua,hospital,12.1478,-86.2660,Managua,false,,0.75,Barrio Largaespada; referencia clásica del centro
+Hospital Metropolitano Vivian Pellas,Vivian Pellas;Hospital Vivian Pellas,hospital,12.0795,-86.2262,Managua,false,desde 2004,0.8,Km 9.8 Carretera a Masaya; coordenada por verificar
+Hospital Militar Alejandro Dávila Bolaños,Hospital Militar,hospital,12.1428,-86.2792,Managua,false,,0.7,Al pie de la Loma de Tiscapa
+Hospital Antonio Lenín Fonseca,Lenín Fonseca,hospital,12.1425,-86.2938,Managua,false,,0.6,Occidente de Managua; coordenada por verificar
+Hospital Alemán Nicaragüense,El Alemán,hospital,12.1418,-86.2222,Managua,false,,0.6,Carretera Norte; coordenada por verificar
+Hospital Roberto Calderón,Hospital Manolo Morales,hospital,12.1490,-86.2610,Managua,false,,0.6,El nombre viejo Manolo Morales sigue siendo el que se usa
+Aeropuerto Internacional Augusto C. Sandino,Aeropuerto de Managua;MGA;Aeropuerto Sandino,aeropuerto,12.1415,-86.1682,Managua,false,,0.9,Centro del círculo de curación de 48.3 km del proyecto
+Terminal de buses de la UCA,Parada de la UCA,terminal,12.1310,-86.2705,Managua,false,,0.7,Microbuses a Masaya Granada y Carazo
+Zona Franca Las Mercedes,Las Mercedes;Zona Franca,empresa,12.1500,-86.1850,Managua,false,,0.6,Carretera Norte frente al aeropuerto; coordenada por verificar
+Barrio Bolonia,Bolonia,barrio,12.1420,-86.2800,Managua,false,,0.6,Sector de embajadas y oficinas
+Reparto Los Robles,Los Robles,reparto,12.1180,-86.2620,Managua,false,,0.65,Al oriente de la Carretera a Masaya
+Altamira D'Este,Altamira,reparto,12.1230,-86.2530,Managua,false,,0.65,Se navega por etapas y por casas numeradas
+Villa Fontana,,reparto,12.1150,-86.2560,Managua,false,,0.6,Coordenada por verificar
+Ciudad Jardín,,reparto,12.1362,-86.2530,Managua,false,,0.6,Coordenada por verificar
+Barrio Martha Quezada,La Zona;Martha Quezada,barrio,12.1490,-86.2790,Managua,false,,0.55,Zona de hospedajes junto al antiguo Intercontinental
+Colonia Centroamérica,,colonia,12.1160,-86.2440,Managua,false,,0.55,Coordenada por verificar
+Barrio Monseñor Lezcano,Monseñor Lezcano,barrio,12.1450,-86.2900,Managua,false,,0.55,La iglesia del mismo nombre es la referencia
+Batahola Norte,Batahola,barrio,12.1430,-86.2905,Managua,false,,0.5,Coordenada por verificar
+Residencial Las Colinas,Las Colinas,residencial,12.0850,-86.2380,Managua,false,,0.55,Carretera a Masaya; coordenada por verificar
+Villa Libertad,,barrio,12.1330,-86.2020,Managua,false,,0.5,Distrito VI; coordenada por verificar
+Reparto San Juan,,reparto,12.1265,-86.2620,Managua,false,,0.55,Junto a Metrocentro
+Barrio Linda Vista,Linda Vista,barrio,12.1395,-86.2915,Managua,false,,0.55,Coordenada por verificar
+Cine Cabrera,Donde fue el Cine Cabrera,edificio,12.1543,-86.2733,Managua,true,hasta 1972,0.6,Cine del centro viejo caído en el terremoto; sigue siendo una dirección viva frente a la Catedral Vieja
+Antigua Pepsi,La Pepsi;Donde fue la Pepsi;Planta Pepsi,empresa,12.1481,-86.2482,Managua,true,hasta los años 1990,0.55,Embotelladora sobre la Pista Larreynaga; coordenada por verificar
+El Arbolito,Donde está el Arbolito,referencia,12.1495,-86.2698,Managua,true,árbol desaparecido,0.5,El árbol ya no existe pero el nombre sigue nombrando el sector; coordenada por verificar
+Banco Popular,Donde fue el Banco Popular,edificio,12.1520,-86.2701,Managua,true,hasta 1990,0.45,Sucursal cerrada tras 1990 que todavía nombra la esquina; coordenada por verificar
+Hospital El Retiro,Antiguo Hospital El Retiro;El Retiro,hospital,12.1408,-86.2818,Managua,true,hasta 1972,0.5,Hospital de Bolonia destruido por el terremoto; coordenada por verificar
+Cine González,Donde fue el Cine González;Teatro González,edificio,12.1489,-86.2755,Managua,true,hasta 1972,0.45,Cine del centro viejo; coordenada por verificar
+La Vicky,Donde fue la Vicky,edificio,12.1462,-86.2624,Managua,true,siglo XX,0.4,Tienda desaparecida que todavía nombra la esquina; coordenada muy aproximada
+Antiguo Hotel Intercontinental,Hotel Intercontinental;El Intercontinental;La Pirámide;Crowne Plaza Managua,hotel,12.1477,-86.2761,Managua,true,InterContinental 1969-2007,0.7,El edificio sigue en pie con otro nombre pero la gente dice el antiguo Inter
+Antigua Casa Presidencial,Palacio Presidencial;Casa Presidencial de Tiscapa,edificio,12.1443,-86.2735,Managua,true,hasta 1972,0.45,En la Loma de Tiscapa; sólo quedan cimientos
+Estación del Ferrocarril,Donde fue la estación del tren;Estación del tren,edificio,12.1512,-86.2790,Managua,true,hasta 1994,0.45,El Ferrocarril del Pacífico se levantó en 1994; coordenada por verificar
+Gran Hotel de Managua,Donde fue el Gran Hotel;Antiguo Gran Hotel,hotel,12.1554,-86.2782,Managua,true,hotel 1942-1972,0.4,Hoy centro cultural; coordenada por verificar
+El Hormiguero,Donde fue el Hormiguero,edificio,12.1500,-86.2760,Managua,true,hasta 1979,0.4,Antiguo cuartel de la Guardia Nacional; coordenada por verificar
+La Curva,Donde fue La Curva,referencia,12.1462,-86.2748,Managua,true,hasta 1979,0.4,Antiguo Ministerio de Gobernación al pie de Tiscapa; coordenada por verificar
+Cine México,Donde fue el Cine México,edificio,12.1471,-86.2596,Managua,true,hasta 1972,0.35,Cine desaparecido; coordenada muy aproximada
+Cine Margot,Donde fue el Cine Margot,edificio,12.1533,-86.2680,Managua,true,hasta 1972,0.3,Cine desaparecido; coordenada muy aproximada
+Cine Salinas,Donde fue el Cine Salinas,edificio,12.1455,-86.2905,Managua,true,hasta los años 1990,0.3,Cine de barrio; coordenada muy aproximada
+Antiguo Banco Nacional,BANIC;Donde fue el BANIC,edificio,12.1531,-86.2755,Managua,true,hasta 1998,0.35,Banco liquidado en 1998; coordenada por verificar
+Casa del Obrero,Donde fue la Casa del Obrero,edificio,12.1526,-86.2766,Managua,true,hasta 1972,0.3,Edificio histórico del centro viejo; coordenada muy aproximada
+Antiguo Colegio Teresiano,Colegio Teresiano viejo,colegio,12.1470,-86.2712,Managua,true,hasta 1972,0.3,El colegio se trasladó pero el sitio conserva el nombre; coordenada por verificar
+Antiguo Mercado San Miguel,Donde fue el Mercado San Miguel,mercado,12.1520,-86.2712,Managua,true,hasta 1972,0.35,Mercado del centro viejo destruido por el terremoto; coordenada por verificar
+Parque Central de Granada,Parque Colón;Parque Central,parque,11.9299,-85.9560,Granada,false,,0.85,Centro histórico; todo Granada se direcciona desde aquí
+Catedral de Granada,Catedral de la Inmaculada Concepción,iglesia,11.9303,-85.9556,Granada,false,,0.8,Frente al parque central
+Iglesia La Merced,La Merced;Convento La Merced,iglesia,11.9295,-85.9583,Granada,false,,0.7,El campanario es el mirador de la ciudad
+Iglesia Xalteva,Parque Xalteva,iglesia,11.9296,-85.9612,Granada,false,,0.6,Calle Real Xalteva
+Fortaleza La Pólvora,La Pólvora,monumento,11.9290,-85.9640,Granada,false,1748,0.6,Extremo poniente de la Calle Real Xalteva
+Convento San Francisco,Iglesia San Francisco;Museo San Francisco,iglesia,11.9320,-85.9557,Granada,false,1529,0.6,Convento y museo
+Calle La Calzada,La Calzada,referencia,11.9305,-85.9520,Granada,false,,0.7,Calle peatonal del parque central al lago
+Malecón de Granada,Puerto de Granada;Centro Turístico,referencia,11.9302,-85.9455,Granada,false,,0.7,Orilla del Cocibolca
+Mercado Municipal de Granada,Mercado de Granada,mercado,11.9268,-85.9563,Granada,false,,0.7,Una cuadra al sur del parque central
+Puerto Asese,Isletas de Granada;Asese,referencia,11.9075,-85.9450,Granada,false,,0.5,Salida a las isletas; coordenada por verificar
+Parque Central de Masaya,Parque 17 de Octubre,parque,11.9744,-86.0944,Masaya,false,,0.8,Centro de Masaya
+Mercado Viejo de Masaya,Mercado Nacional de Artesanías;Mercado de Artesanías,mercado,11.9737,-86.0930,Masaya,false,,0.8,El de las artesanías dentro del edificio antiguo
+Mercado Nuevo de Masaya,Mercado Ernesto Fernández;Mercado Municipal de Masaya,mercado,11.9760,-86.0910,Masaya,false,,0.75,El mercado de diario junto a la terminal de buses
+Malecón de Masaya,Mirador del Malecón,mirador,11.9760,-86.1010,Masaya,false,,0.7,Balcón sobre la Laguna de Masaya
+Iglesia San Jerónimo,San Jerónimo,iglesia,11.9790,-86.0930,Masaya,false,,0.7,Patrono de Masaya; coordenada por verificar
+Iglesia La Asunción,Parroquia La Asunción,iglesia,11.9744,-86.0947,Masaya,false,,0.6,Frente al parque central
+Fortaleza de Coyotepe,Coyotepe,monumento,11.9855,-86.0930,Masaya,false,1893,0.6,Cerro sobre la carretera a Managua
+Barrio Monimbó,Monimbó,barrio,11.9690,-86.0955,Masaya,false,,0.6,Barrio indígena; coordenada aproximada
+Volcán Masaya,Parque Nacional Volcán Masaya;Cráter Santiago,volcan,11.9842,-86.1614,Masaya,false,,0.75,Km 23 Carretera Managua-Masaya
+Mirador de Catarina,Catarina;El mirador,mirador,11.9075,-86.0760,Catarina,false,,0.75,Vista sobre la Laguna de Apoyo
+Laguna de Apoyo,,laguna,11.9250,-86.0333,Catarina,false,,0.6,Coordenada del centro de la laguna
+Parque Central de Jinotepe,Parque Central,parque,11.8500,-86.1997,Jinotepe,false,,0.7,Centro de Jinotepe
+Basílica de Santiago de Jinotepe,Parroquia Santiago,iglesia,11.8503,-86.1993,Jinotepe,false,,0.65,Frente al parque central
+Parque Central de Diriamba,Parque Central,parque,11.8570,-86.2390,Diriamba,false,,0.7,Centro de Diriamba
+Basílica San Sebastián de Diriamba,San Sebastián,iglesia,11.8578,-86.2385,Diriamba,false,,0.65,Patrono de las fiestas del Güegüense
+Torre del Reloj de Diriamba,El Reloj,monumento,11.8574,-86.2381,Diriamba,false,años 1930,0.5,Referencia del centro; coordenada por verificar
+Parque Central de San Marcos,Parque Central,parque,11.9089,-86.2003,San Marcos,false,,0.6,Centro de San Marcos
+Parque Central de Masatepe,Parque Central,parque,11.9139,-86.1461,Masatepe,false,,0.6,Centro de Masatepe
+Parque Central de Niquinohomo,Parque Sandino,parque,11.9053,-86.0956,Niquinohomo,false,,0.55,La casa natal de Sandino está en la esquina
+Parque Central de Nandaime,,parque,11.7580,-86.0530,Nandaime,false,,0.5,Borde sur del círculo de curación
+Parque Central de Tipitapa,,parque,12.1974,-86.0972,Tipitapa,false,,0.6,Centro de Tipitapa
+Iglesia Señor de Esquipulas,Aguas Termales de Tipitapa,iglesia,12.1972,-86.0966,Tipitapa,false,,0.55,Coordenada por verificar
+Empalme de San Benito,San Benito,referencia,12.2461,-86.1155,Tipitapa,false,,0.7,Cruce de la Panamericana con la Carretera Norte; coordenada por verificar
+Parque Central de Ciudad Sandino,Zona 1 Ciudad Sandino,parque,12.1590,-86.3400,Ciudad Sandino,false,,0.6,Coordenada por verificar
+Laguna de Xiloá,Xiloá,laguna,12.2178,-86.3178,Mateare,false,,0.6,Coordenada del centro de la laguna
+Parque Central de Nindirí,,parque,12.0000,-86.1150,Nindirí,false,,0.5,Coordenada por verificar
+Parque Central de Ticuantepe,,parque,12.0193,-86.2044,Ticuantepe,false,,0.5,Coordenada por verificar
+El Crucero,Casco urbano de El Crucero,referencia,11.9908,-86.3106,El Crucero,false,,0.5,Km 21 Carretera Sur; coordenada por verificar
+Volcán Mombacho,Reserva Natural Volcán Mombacho,volcan,11.8258,-85.9683,Granada,false,,0.6,Borde sur del círculo de curación

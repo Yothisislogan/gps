@@ -12,6 +12,10 @@ SCRIPT_NAME=build_tiles
 
 WHAT="${1:-all}"
 
+# The offline archive covers only the curation circle. base.pmtiles is the whole
+# country and far too large to hold in a phone's Cache Storage; the circle is the
+# area people actually drive, and it is the area that gets field-verified.
+
 ensure_dirs
 require java "apt install openjdk-21-jre-headless (Planetiler needs Java 21+)"
 require_free_space 4096
@@ -110,11 +114,34 @@ build_pois() {
   publish "${POIS}.tmp" "$POIS"
 }
 
+build_circle() {
+  [ -f "$PBF" ] || die "no OSM extract at ${PBF}; run pipeline/fetch_osm.sh first"
+  local circle="${TILES_DIR}/circle.pmtiles"
+  local bounds
+  # The same 48.3 km circle the QA clip uses, as a bounding box Planetiler
+  # understands (west,south,east,north).
+  bounds="$(cd "$REPO_ROOT" && python3 -c "
+from common.geo import MGA_LAT, MGA_LON, CURATION_RADIUS_M, bbox_around
+w, s, e, n = bbox_around(MGA_LAT, MGA_LON, CURATION_RADIUS_M)
+print(f'{w:.5f},{s:.5f},{e:.5f},{n:.5f}')")"
+  log "building circle.pmtiles for offline use (bounds ${bounds})"
+
+  # Housenumbers are the single biggest z14 contributor and are close to useless
+  # in a country that does not use street numbers — dropping them keeps the
+  # download something a Claro data plan can absorb.
+  java -Xmx"${PLANETILER_XMX:-2g}" -jar "$PLANETILER_JAR"     --osm-path="$PBF"     --output="${circle}.tmp"     --force     --languages=es,en     --bounds="$bounds"     --exclude-layers=housenumber     --nodemap-type=sortedtable     --storage=ram     --download-dir="$SOURCES_DIR"     --building-merge-z13=false     || die "planetiler failed for the circle archive"
+
+  head -c 7 "${circle}.tmp" | grep -q "PMTiles" || die "circle output is not a PMTiles archive"
+  publish "${circle}.tmp" "$circle"
+  log "offline archive size: $(du -h "$circle" | cut -f1) — shown to users before they download"
+}
+
 case "$WHAT" in
-  --base-only) build_base ;;
-  --pois-only) build_pois ;;
-  all)         build_base; build_pois ;;
-  *)           die "usage: $0 [--base-only|--pois-only]" ;;
+  --base-only)   build_base ;;
+  --pois-only)   build_pois ;;
+  --circle-only) build_circle ;;
+  all)           build_base; build_pois ;;
+  *)             die "usage: $0 [--base-only|--pois-only|--circle-only]" ;;
 esac
 
 log "done"

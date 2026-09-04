@@ -1,0 +1,63 @@
+# nicanav highway registry — the carreteras Nicaraguans quote km posts on.
+#
+# Read by pipeline/geocode/kmpost.py (alias matching, chainage origin, display names) and
+# seeded into the `highway` table of db/migrations/002_highways.sql, whose columns this file
+# mirrors:  highway_key,display_name,aliases,osm_ref,km0_lat,km0_lon,note
+#
+# `aliases` is a `;`-separated list, already lowercase and accent-free, because the matcher
+# folds the query the same way: "Ctra. a Masaya", "carretera masaya" and "CARRETERA A MASAYA"
+# all land on this file's row.  No alias is the bare word "carretera": half of the country's
+# addresses contain it and on its own it identifies nothing.  Aliases are matched
+# longest-first, so "carretera masaya granada" wins over "carretera masaya" on the same
+# string.  Bare destination names ("masaya", "tipitapa", "el rama") are included on purpose —
+# "Km 14 Masaya" is how people actually write it — and they are only ever consulted on a
+# string that already contains a km token.
+#
+# INVARIANT for whatever materialises `highway.geom`: the stored centreline must START at the
+# row's (km0_lat, km0_lon) and run in the direction of increasing kilometraje.  Several of
+# these roads share their first kilometres with another row — Ticuantepe branches off the
+# Carretera a Masaya, El Rama off the Panamericana at San Benito, Matagalpa off it at Sébaco —
+# and the signs count from Managua regardless, so the merged line has to include the shared
+# trunk or every km post on it lands short by the length of that trunk.
+# kmpost.resolve() reverses a backwards line and refuses to trust an origin that is nowhere
+# near km0, but it cannot invent a missing trunk.
+#
+# UNVERIFIED (km0): the radial carreteras all inherit Managua's historic Km 0 in the old
+# centre — Plaza de la República / Antigua Catedral, 12.1544 -86.2733 — which is where the
+# pre-1972 road network was measured from.  The coordinate is good to a few hundred metres at
+# best and the monument itself may not be the surveyed origin.  Sanity check on the ground:
+# the airport is universally addressed as "Km 11 Carretera Norte" and sits 11.5 km from this
+# point in a straight line, which is consistent but not proof.  Anything that depends on this
+# being exact is wrong by construction — that is what the `kmpost` calibration table is for.
+# On the first field pass, photograph the Km 1..Km 5 mojones of Carretera Norte and Carretera
+# a Masaya and let the calibration override this row entirely.
+#
+# UNVERIFIED (osm_ref): only three refs are filled in, and all three were written from
+# knowledge of the national route numbering, not from the extract: NIC-1 (Panamericana Norte
+# / Carretera Norte), NIC-2 (Panamericana Sur toward Rivas and Peñas Blancas) and NIC-4
+# (Carretera a Masaya–Granada).  Every other row is deliberately left EMPTY rather than
+# guessed.  Before `osm_ref` is used for anything, cross-check all of them against
+# `ref=*` on the ways in data/osm/nicaragua-latest.osm.pbf and fill the blanks from there —
+# a wrong ref would attach a whole highway's geometry to the wrong name, which is a far worse
+# failure than a missing one.  The ref is a secondary hint only: `highway_key` is the key.
+#
+# UNVERIFIED (chainages quoted in the notes): Tipitapa ≈ km 22, El Crucero ≈ km 22,
+# Nandaime ≈ km 67, León ≈ km 90, Rivas ≈ km 111, Matagalpa ≈ km 130, Peñas Blancas ≈ km 145,
+# El Rama ≈ km 292.  These are the numbers in common use; they are here to make a gross
+# calibration error obvious, not as survey data.
+highway_key,display_name,aliases,osm_ref,km0_lat,km0_lon,note
+carretera_a_masaya,Carretera a Masaya,carretera a masaya;carretera masaya;ctra a masaya;ctra masaya;carr a masaya;carr masaya;km masaya;masaya,NIC-4,12.1544,-86.2733,"Radial sur-oriental: Managua–Nindirí–Masaya. La vía como tal arranca en la Rotonda Centroamérica pero el kilometraje se cuenta desde el centro viejo, por eso Metrocentro cae cerca del Km 4 y Esquipulas del Km 14."
+carretera_norte,Carretera Norte,carretera norte;ctra norte;carr norte;panamericana norte;carretera panamericana norte;km norte;carretera a esteli;carretera esteli;esteli;carretera a somoto,NIC-1,12.1544,-86.2733,"Managua–aeropuerto (Km 11)–Tipitapa y de ahí la Panamericana Norte hacia Sébaco, Estelí y Somoto. Las consultas por Estelí caen en esta fila; el ramal a Matagalpa tiene la suya."
+carretera_sur,Carretera Sur,carretera sur;ctra sur;carr sur;carr a el crucero;km sur,,12.1544,-86.2733,"Managua–Las Nubes–El Crucero. Es el mismo asfalto que panamericana_sur en sus primeros ~25 km; se mantiene como fila aparte porque la gente dice 'Carretera Sur' para todo lo que está antes de El Crucero."
+carretera_nueva_a_leon,Carretera Nueva a León,carretera nueva a leon;nueva a leon;carretera nueva leon;ctra nueva a leon;carr nueva a leon;carretera a leon;carretera leon;km leon,,12.1544,-86.2733,"Managua–Ciudad Sandino–Izapa–León. 'Carretera a León' sin más se resuelve aquí: la nueva es la ruta por defecto desde hace décadas. León ≈ Km 90."
+carretera_vieja_a_leon,Carretera Vieja a León,carretera vieja a leon;vieja a leon;carretera vieja leon;ctra vieja a leon;carr vieja a leon;carretera vieja;via vieja a leon,,12.1544,-86.2733,"Managua–Los Brasiles–Mateare–Nagarote–La Paz Centro–León, bordeando el lago. Kilometraje propio: un mismo número cae en pueblos distintos según sea la vieja o la nueva, así que el alias 'vieja' es load-bearing."
+carretera_a_tipitapa,Carretera a Tipitapa,carretera a tipitapa;carretera tipitapa;ctra a tipitapa;carr a tipitapa;tipitapa,,12.1544,-86.2733,"Mismo corredor que carretera_norte hasta Tipitapa (≈ Km 22); existe como fila porque la gente que vive del lado de Tipitapa la nombra así y espera el mismo conteo desde Managua."
+carretera_masaya_granada,Carretera Masaya-Granada,carretera masaya granada;masaya granada;carretera a granada;carretera granada;ctra masaya granada,,12.1544,-86.2733,"Continuación de la NIC-4 de Masaya a Granada. UNVERIFIED: se asume que el kilometraje sigue contando desde Managua (Granada ≈ Km 45); parte del uso local reinicia el conteo en Masaya, lo que desplazaría todo ~28 km. Calibrar con mojones antes de confiar."
+carretera_a_el_crucero,Carretera a El Crucero,carretera a el crucero;carretera al crucero;carretera el crucero;ctra a el crucero;el crucero,,12.1544,-86.2733,"El mismo asfalto que carretera_sur; El Crucero ≈ Km 22. Fila propia porque es como se anuncian los negocios de la subida y del alto."
+carretera_a_ticuantepe,Carretera a Ticuantepe,carretera a ticuantepe;carretera ticuantepe;ctra a ticuantepe;ticuantepe;carretera a la concha;carretera la concha;la concha;carretera ticuantepe la concha,,12.1544,-86.2733,"Se desprende de la Carretera a Masaya y sigue a Ticuantepe y La Concepción (La Concha). Los rótulos siguen contando desde Managua, así que la geometría de esta fila debe incluir el tramo compartido de la Carretera a Masaya."
+panamericana_sur,Carretera Panamericana Sur,panamericana sur;carretera panamericana sur;carretera a rivas;carretera rivas;rivas;carretera a penas blancas;penas blancas;frontera penas blancas,NIC-2,12.1544,-86.2733,"Managua–Jinotepe–Nandaime (≈ Km 67)–Rivas (≈ Km 111)–Peñas Blancas (≈ Km 145). Comparte el tramo inicial con carretera_sur y carretera_a_el_crucero."
+carretera_a_el_rama,Carretera a El Rama,carretera a el rama;carretera al rama;carretera el rama;carretera rama;el rama;carretera al atlantico,,12.1544,-86.2733,"Deja la Panamericana en San Benito y cruza Boaco/Juigalpa hasta El Rama (≈ Km 292). Es la vía con los kilometrajes más altos que se citan como dirección en el país."
+carretera_a_matagalpa,Carretera a Matagalpa,carretera a matagalpa;carretera matagalpa;ctra a matagalpa;matagalpa,,12.1544,-86.2733,"Ramal que sale de la Panamericana Norte en Sébaco (≈ Km 100) hacia Matagalpa (≈ Km 130). La geometría debe incluir el tronco Managua–Sébaco o los mojones caen 100 km cortos."
+pista_juan_pablo_ii,Pista Juan Pablo II,pista juan pablo ii;pista juan pablo;juan pablo ii;pista jp ii;pista jpii,,,,"Pista urbana de Managua. Sin kilometraje señalizado: las direcciones sobre ella son relativas a rotondas y semáforos, no a mojones. Una consulta 'Km N Pista Juan Pablo II' se resuelve midiendo sobre la geometría desde el extremo poniente y sale con confianza baja a propósito."
+pista_suburbana,Pista Suburbana,pista suburbana;suburbana;la suburbana,,,,"Pista urbana Managua (aeropuerto–Mercado Oriental–Villa Fontana). Sin mojones; ver la nota de pista_juan_pablo_ii."
+pista_de_la_resistencia,Pista de la Resistencia,pista de la resistencia;pista la resistencia;pista resistencia;la resistencia,,,,"Pista urbana Managua. Sin mojones; ver la nota de pista_juan_pablo_ii."

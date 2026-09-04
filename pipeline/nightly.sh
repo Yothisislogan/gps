@@ -48,6 +48,8 @@ step "fetch osm"          "${REPO_ROOT}/pipeline/fetch_osm.sh" $FORCE
 
 if [ "$SKIP_TILES" -eq 0 ]; then
   step "build base tiles" "${REPO_ROOT}/pipeline/build_tiles.sh" --base-only
+  # The offline archive users download for the curation circle.
+  step "build circle tiles" "${REPO_ROOT}/pipeline/build_tiles.sh" --circle-only
 fi
 
 if [ "$SKIP_VALHALLA" -eq 0 ]; then

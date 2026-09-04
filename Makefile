@@ -14,7 +14,7 @@ DATA    ?= data
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install test test-all lint format check up down restart logs ps \
-        build nightly tiles valhalla pois index qa golden kpis circle migrate psql \
+        build nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
         backup check-speeds clean-tmp
 
 help:  ## Show this help
@@ -74,6 +74,9 @@ circle:  ## Regenerate the 48.3 km curation circle around MGA
 
 tiles:  ## Rebuild base.pmtiles from the current extract
 	./pipeline/build_tiles.sh
+
+circle-tiles:  ## Rebuild the offline archive for the 48.3 km circle
+	./pipeline/build_tiles.sh --circle-only
 
 valhalla:  ## Rebuild the routing graph from the current extract
 	./pipeline/build_valhalla.sh
