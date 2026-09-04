@@ -14,7 +14,7 @@ DATA    ?= data
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install test test-all lint format check up down restart logs ps \
-        build nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
+        build web-config nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
         backup check-speeds verify verify-images clean-tmp
 
 help:  ## Show this help
@@ -44,7 +44,10 @@ check: lint test  ## Everything CI runs
 
 # ------------------------------------------------------------------ the stack
 
-up:  ## Start the stack
+web-config:  ## Regenerate web/config.js from the environment
+	$(PYTHON) scripts/render_web_config.py
+
+up: web-config  ## Start the stack
 	$(COMPOSE) up -d
 
 down:  ## Stop the stack (data volumes survive)

@@ -1,0 +1,21 @@
+# Keep build contexts small: the data directory is tens of gigabytes of tiles,
+# graphs and extracts, none of which belong in an image layer.
+data/
+.git/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage*
+*.osm.pbf
+*.pmtiles
+*.mbtiles
+*.parquet
+infra/.env
+.env
+*.log
+tmp/
