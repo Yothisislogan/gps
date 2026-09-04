@@ -637,10 +637,13 @@ def _project_calibration(
         if not (0.0 <= km <= MAX_KM):
             log.debug("calibration km %.3f out of range", km)
             continue
-        _snapped, offset_m, along_m, _index = nearest_point_on_line(lat, lon, coords)
+        snapped, offset_m, _projected_along_m, index = nearest_point_on_line(lat, lon, coords)
         if offset_m > CALIBRATION_MAX_OFFSET_M:
             log.debug("calibration Km %.3f is %.0f m off the centreline; dropped", km, offset_m)
             continue
+        along_m = prefix[index] + haversine_m(
+            coords[index][1], coords[index][0], snapped[0], snapped[1]
+        )
         signed_m = km * 1000.0
         previous = projected.get(signed_m)
         # Duplicate km (an OSM milestone and a photographed sign): keep the closer one.
@@ -704,8 +707,9 @@ def _chainage(
       (off the line, out of order); a sign that is merely 500 m off is indistinguishable
       from good data and propagates into every query between its neighbours.
     """
-    length_m = line_length_m(coords)
-    anchors = _project_calibration(coords, calibration)
+    prefix = _prefix_lengths(coords)
+    length_m = prefix[-1]
+    anchors = _project_calibration(coords, calibration, prefix)
     signed_m = km * 1000.0
 
     if not anchors:
@@ -726,18 +730,22 @@ def _chainage(
         quality = "extrapolated"
         gap_km = None
         anchors_km = ()
-        if signed_m <= anchors[0][0]:
+        if signed_m < anchors[0][0]:
             scale = _segment_scale(anchors[0], anchors[1])
             raw_along = anchors[0][1] + (signed_m - anchors[0][0]) * scale
             gap_km = (anchors[0][0] - signed_m) / 1000.0
             anchors_km = (anchors[0][0] / 1000.0,)
-        elif signed_m >= anchors[-1][0]:
+        elif signed_m > anchors[-1][0]:
             scale = _segment_scale(anchors[-2], anchors[-1])
             raw_along = anchors[-1][1] + (signed_m - anchors[-1][0]) * scale
             gap_km = (signed_m - anchors[-1][0]) / 1000.0
             anchors_km = (anchors[-1][0] / 1000.0,)
         else:
-            index = max(i for i, (k, _a) in enumerate(anchors) if k <= signed_m)
+            # A query landing exactly on the last mojón still counts as bracketed, hence the
+            # clamp: it is measured, not extrapolated.
+            index = min(
+                max(i for i, (k, _a) in enumerate(anchors) if k <= signed_m), len(anchors) - 2
+            )
             lo, hi = anchors[index], anchors[index + 1]
             scale = _segment_scale(lo, hi)
             raw_along = lo[1] + (signed_m - lo[0]) * scale

@@ -66,8 +66,8 @@ log "clipping the 48.3 km circle for QA"
 osmium extract --overwrite --polygon "$CIRCLE" "$PBF" -o "${CLIP}.tmp"
 publish "${CLIP}.tmp" "$CLIP"
 
-log "extract statistics"
-osmium fileinfo -e "$CLIP" | sed -n '1,40p' >&2
+log "extract statistics"  # long-form flags only: -e is --expressions on tags-filter and --extended here
+osmium fileinfo --extended "$CLIP" | sed -n '1,40p' >&2
 
 # POIs for the ingest job: nodes and ways carrying the tags the taxonomy maps.
 # Doing the filtering with osmium keeps a full OSM parser out of Python.

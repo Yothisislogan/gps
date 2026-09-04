@@ -15,7 +15,7 @@ DATA    ?= data
 .DEFAULT_GOAL := help
 .PHONY: help venv install test test-all lint format check up down restart logs ps \
         build nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
-        backup check-speeds clean-tmp
+        backup check-speeds verify verify-images clean-tmp
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -115,6 +115,15 @@ psql:  ## Open a psql shell
 
 backup:  ## Dump the database to data/backups/
 	./scripts/backup_db.sh
+
+verify:  ## Post-deploy checks for the failures that are otherwise silent
+	./scripts/verify_deploy.sh $(BASE_URL)
+
+verify-images:  ## Confirm every pinned container image still exists
+	@grep -hoE 'image: *[^ ]+' infra/docker-compose.yml | awk '{print $$2}' | while read -r img; do \
+		printf '%-46s ' "$$img"; \
+		docker manifest inspect "$$img" >/dev/null 2>&1 && echo ok || echo MISSING; \
+	done
 
 check-speeds:  ## Validate the Nicaragua speed table before a graph rebuild
 	@$(PYTHON) -c "import json,sys; \

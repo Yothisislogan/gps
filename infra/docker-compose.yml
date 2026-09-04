@@ -43,6 +43,11 @@ services:
     volumes:
       - ${NICANAV_VALHALLA_DIR:-../data/valhalla}:/custom_files
     environment:
+      # The entrypoint runs under `set -o nounset` and reads tile_urls
+      # unconditionally, so leaving it unset aborts the container with a bare
+      # bash error instead of anything diagnosable. One empty string, one whole
+      # class of startup failure gone.
+      tile_urls: ""
       serve_tiles: "True"
       # Spanish instructions need the admin database (country/region names) and
       # correct local times need the timezone database. Both default True on the

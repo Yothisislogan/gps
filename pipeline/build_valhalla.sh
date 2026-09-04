@@ -88,4 +88,19 @@ if [ -n "$MODIFIED" ]; then
   fi
 fi
 
+# An unsupported language tag falls back to en-US silently, and a router that
+# narrates in English for Nicaraguan drivers is a product failure no health check
+# would notice. One canary route settles it.
+log "canary: Spanish narration"
+CANARY="$(curl -fsS -X POST http://localhost:8002/route -H 'Content-Type: application/json' -d '{
+  "locations":[{"lat":12.1415,"lon":-86.1682},{"lat":12.1150,"lon":-86.2504}],
+  "costing":"auto","language":"es-ES","units":"kilometers"}' || true)"
+if [ -z "$CANARY" ]; then
+  log "WARNING: canary route returned nothing; check the graph covers Managua"
+elif printf '%s' "$CANARY" | grep -qiE '"instruction": *"(Drive|Turn|Head|Continue|Keep)'; then
+  die "instructions came back in English — es-ES is not in this build's locale set"
+else
+  log "canary ok"
+fi
+
 log "done"
