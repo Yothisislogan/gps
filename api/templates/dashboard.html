@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Panel</h1>
+
+<section class="grid">
+  <div class="stat"><span class="stat__value">{{ counts.pois or 0 }}</span><span class="stat__label">lugares</span></div>
+  <div class="stat"><span class="stat__value">{{ counts.pois_circle or 0 }}</span><span class="stat__label">en el círculo</span></div>
+  <div class="stat"><span class="stat__value">{{ counts.pois_verified or 0 }}</span><span class="stat__label">verificados (12m)</span></div>
+  <div class="stat"><span class="stat__value">{{ counts.landmarks or 0 }}</span><span class="stat__label">puntos de referencia</span></div>
+  <div class="stat"><span class="stat__value">{{ counts.former_landmarks or 0 }}</span><span class="stat__label">«donde fue»</span></div>
+  <div class="stat"><span class="stat__value">{{ counts.closures or 0 }}</span><span class="stat__label">cierres activos</span></div>
+</section>
+
+<h2>Pendientes</h2>
+<ul class="pending">
+  <li><a href="/admin/queue">Pares de conflación</a>: <strong>{{ counts.match_queue or 0 }}</strong></li>
+  <li><a href="/admin/queue">Lugares sugeridos</a>: <strong>{{ counts.suggestions or 0 }}</strong></li>
+  <li><a href="/admin/queue">Reportes</a>: <strong>{{ counts.reports or 0 }}</strong></li>
+  <li><a href="/admin/aliases">Direcciones aprendidas</a>: <strong>{{ counts.aliases or 0 }}</strong></li>
+  <li>Problemas marcados en lugares: <strong>{{ counts.flags or 0 }}</strong></li>
+</ul>
+
+<h2>Archivos publicados</h2>
+<table>
+  <thead><tr><th>Archivo</th><th>Tamaño</th><th>Antigüedad</th></tr></thead>
+  <tbody>
+  {% for tile in tiles %}
+    <tr class="{% if tile.age_hours is none %}bad{% elif tile.age_hours > 48 %}warn-row{% endif %}">
+      <td>{{ tile.name }}</td>
+      <td>{% if tile.mb %}{{ tile.mb }} MB{% else %}—{% endif %}</td>
+      <td>{% if tile.age_hours is not none %}{{ tile.age_hours }} h{% else %}no existe{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="note">
+  Un archivo viejo es la falla más silenciosa del sistema: todo sigue
+  funcionando, con las calles del mes pasado.
+</p>
+
+<h2>Calidad de datos{% if kpi_taken_at %} <small>({{ kpi_taken_at }})</small>{% endif %}</h2>
+{% if metrics %}
+<table>
+  <tbody>
+    <tr><td>Kilómetros de calle en el círculo</td><td>{{ metrics.road_km_total }}</td></tr>
+    <tr><td>Con etiqueta de superficie</td><td>{{ '%.0f'|format((metrics.surface_tagged_share or 0) * 100) }} %</td></tr>
+    <tr><td>Primarias/secundarias/terciarias con sentido</td><td>{{ '%.0f'|format((metrics.oneway_tagged_share_driver_critical or 0) * 100) }} %</td></tr>
+    <tr><td>Rotondas</td><td>{{ metrics.roundabouts }}</td></tr>
+    <tr><td>Reductores</td><td>{{ metrics.traffic_calming }}</td></tr>
+    <tr><td>Mojones de kilómetro</td><td>{{ metrics.milestones }}</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Estos números son una lista de pendientes para la próxima salida de campo, no
+  un tablero para presumir.
+</p>
+{% else %}
+<p class="note">Todavía no hay una medición. Corré <code>make kpis</code>.</p>
+{% endif %}
+{% endblock %}

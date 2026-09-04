@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ poi.name }} — nicanav{% endblock %}
+{% block content %}
+<h1>{{ poi.name }}</h1>
+<p class="note">
+  {% if poi.verified_at %}
+    Verificado por {{ poi.verified_by or '—' }} el {{ poi.verified_at }}.
+  {% else %}
+    Sin verificar. Guardar este formulario cuenta como verificación.
+  {% endif %}
+</p>
+
+<form method="post" action="/admin/poi/{{ poi.id }}" class="form">
+  <label>Nombre <input name="name" required maxlength="200" value="{{ poi.name }}"></label>
+
+  <label>Categoría
+    <select name="category" required>
+      {% for category in categories %}
+        <option value="{{ category }}" {% if category == poi.category %}selected{% endif %}>{{ category }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Estado
+    <select name="poi_status">
+      {% for value, label in [('open', 'abierto'), ('closed', 'cerrado'), ('unverified', 'sin verificar')] %}
+        <option value="{{ value }}" {% if value == poi.status %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Teléfono <input name="phone" value="{{ poi.phone or '' }}" placeholder="+505…"></label>
+  <label>WhatsApp <input name="whatsapp" value="{{ poi.whatsapp or '' }}" placeholder="+505…"></label>
+  <label>Facebook <input name="facebook" value="{{ poi.facebook or '' }}"></label>
+  <label>Sitio web <input name="website" value="{{ poi.website or '' }}"></label>
+
+  <label>Horario
+    <input name="opening_hours" value="{{ poi.opening_hours or '' }}" placeholder="Mo-Sa 08:00-18:00">
+    <small>Sintaxis <code>opening_hours</code> de OSM. Si no se puede interpretar, la app muestra el texto tal cual en vez de adivinar.</small>
+  </label>
+
+  <label>Dirección
+    <input name="address_text" value="{{ poi.address_text or '' }}"
+           placeholder="De la Rotonda El Güegüense, 2c al sur">
+  </label>
+
+  <div class="row">
+    <label>Latitud <input name="lat" type="number" step="0.000001" required value="{{ poi.lat }}"></label>
+    <label>Longitud <input name="lon" type="number" step="0.000001" required value="{{ poi.lon }}"></label>
+  </div>
+  <p class="note">
+    <a href="https://www.openstreetmap.org/#map=19/{{ '%.5f'|format(poi.lat) }}/{{ '%.5f'|format(poi.lon) }}"
+       target="_blank" rel="noopener">Ver el punto en OSM</a> — un pin mal puesto
+    es el error de datos más común, y el más caro para quien maneja.
+  </p>
+
+  <button type="submit">Guardar y verificar</button>
+</form>
+
+<p>
+  <button hx-post="/admin/poi/{{ poi.id }}/verify" hx-target="#verify-result" hx-swap="innerHTML">
+    Marcar verificado sin cambios
+  </button>
+  <span id="verify-result"></span>
+</p>
+
+<h2>Procedencia</h2>
+<p class="note">
+  De dónde vino cada dato. Las licencias se guardan por fila a propósito: así el
+  conjunto publicado se puede atribuir en vez de quedar todo mezclado.
+</p>
+<table>
+  <thead><tr><th>Fuente</th><th>Id</th><th>Nombre</th><th>Licencia</th><th>Traído</th></tr></thead>
+  <tbody>
+  {% for source in sources %}
+    <tr>
+      <td>{{ source.source }}</td>
+      <td><small>{{ source.source_id }}</small></td>
+      <td>{{ source.name or '—' }}</td>
+      <td><small>{{ source.license }}</small></td>
+      <td><small>{{ source.fetched_at }}</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Sin procedencia registrada.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,164 @@
+/*
+ * The moderation UI.
+ *
+ * Deliberately plain. This is a tool for working through hundreds of rows, and
+ * every pixel spent on decoration is one not spent on legibility. Dense tables,
+ * big hit targets on the decision buttons, and colour used only where it means
+ * something.
+ */
+
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --line: #ddd8cf;
+  --text: #23201c;
+  --dim: #6b645b;
+  --accent: #0b6e4f;
+  --danger: #b3261e;
+  --warn: #a05a00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --surface: #1d2027;
+    --line: #2e333c;
+    --text: #e6e8ec;
+    --dim: #9aa1ad;
+    --accent: #46a883;
+    --danger: #f08a82;
+    --warn: #d9a441;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.bar {
+  display: flex;
+  gap: 20px;
+  align-items: baseline;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.bar nav { display: flex; gap: 16px; }
+.bar a { color: var(--text); text-decoration: none; }
+.bar a:hover { text-decoration: underline; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+h1 { font-size: 22px; margin: 8px 0 16px; }
+h2 { font-size: 17px; margin: 28px 0 8px; }
+small { color: var(--dim); }
+
+.note { color: var(--dim); font-size: 14px; max-width: 70ch; }
+
+.warn {
+  margin: 0;
+  padding: 10px 20px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border-bottom: 1px solid var(--line);
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.stat__value { font-size: 24px; font-weight: 700; }
+.stat__label { color: var(--dim); font-size: 13px; }
+
+.pending { padding-left: 18px; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+th, td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); }
+tr:last-child td { border-bottom: 0; }
+
+/* Decisions are irreversible-ish and made hundreds at a time: the target has to
+   be big enough to hit without looking. */
+.actions { white-space: nowrap; }
+.actions button {
+  min-height: 36px;
+  padding: 0 12px;
+  margin-right: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.actions button:hover { border-color: var(--accent); }
+
+.decided td { color: var(--accent); }
+.failed td { color: var(--danger); }
+.ok { color: var(--accent); font-weight: 600; }
+.bad { color: var(--danger); font-weight: 600; }
+.warn-row td { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+
+.form { display: flex; flex-direction: column; gap: 10px; max-width: 620px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.form .row { display: flex; gap: 10px; }
+.form .row label { flex: 1; }
+input, select, textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+button[type="submit"] {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+footer {
+  max-width: 1100px;
+  margin: 40px auto 24px;
+  padding: 0 20px;
+  color: var(--dim);
+  font-size: 13px;
+}

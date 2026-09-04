@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}nicanav — administración{% endblock %}</title>
+<link rel="stylesheet" href="/admin/static/admin.css">
+<!-- HTMX, pinned. The only front-end dependency this UI has. -->
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"></script>
+</head>
+<body>
+<header class="bar">
+  <strong>nicanav</strong>
+  <nav>
+    <a href="/admin">Panel</a>
+    <a href="/admin/queue">Cola</a>
+    <a href="/admin/aliases">Direcciones</a>
+    <a href="/admin/closures">Cierres</a>
+  </nav>
+</header>
+
+{% if not available %}
+<p class="warn">
+  La base de datos no está disponible. Las páginas se muestran vacías y no se
+  puede guardar nada.
+</p>
+{% endif %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer>
+  <p>Los datos vienen de OpenStreetMap (ODbL) y Overture. Cada decisión que
+  tomás acá queda registrada con tu usuario.</p>
+</footer>
+</body>
+</html>

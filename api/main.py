@@ -11,15 +11,17 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.clients.db import Database
 from api.clients.meili import MeiliClient
 from api.deps import RateLimiter
 from api.errors import install_error_handlers
-from api.routers import geocode, health, poi, route, search, submissions
+from api.routers import admin, geocode, health, poi, route, search, submissions
 from common.config import Settings, get_settings
 from common.valhalla import AsyncValhallaClient
 
@@ -79,6 +81,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for module in (health, search, geocode, poi, route, submissions):
         app.include_router(module.router, prefix="/api")
+
+    # The moderation UI is HTML, not JSON, and lives outside /api. nginx puts
+    # Basic auth in front of it; the router checks the credentials again itself.
+    app.include_router(admin.router)
+    app.mount(
+        "/admin/static",
+        StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+        name="admin-static",
+    )
 
     return app
 

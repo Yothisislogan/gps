@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Direcciones aprendidas</h1>
+<p class="note">
+  Cada fila es una corrección: alguien arrastró el pin al lugar correcto. Una
+  dirección aprobada le gana al analizador para esa cadena exacta, así que
+  aprobar una equivocada es peor que rechazar una buena. Revisá que el punto de
+  referencia que encontró el analizador sea el que la persona quiso decir.
+</p>
+<table>
+  <thead>
+    <tr><th>Texto</th><th>Lectura del analizador</th><th>Veces</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for alias in aliases %}
+    <tr id="alias-{{ alias.id }}">
+      <td>
+        <strong>{{ alias.text }}</strong><br>
+        <small><a href="https://www.openstreetmap.org/#map=18/{{ '%.5f'|format(alias.lat) }}/{{ '%.5f'|format(alias.lon) }}"
+                  target="_blank" rel="noopener">{{ '%.5f'|format(alias.lat) }}, {{ '%.5f'|format(alias.lon) }}</a></small>
+      </td>
+      <td>
+        {% if alias.landmark %}
+          desde <strong>{{ alias.landmark }}</strong>{% if alias.former %} <em>(ya no existe)</em>{% endif %}
+          {% if alias.offsets %}<br><small>{{ alias.offsets|join(' · ') }}</small>{% endif %}
+        {% else %}
+          <em>no se pudo interpretar</em>
+        {% endif %}
+      </td>
+      <td>{{ alias.hits }}</td>
+      <td class="actions">
+        <button hx-post="/admin/alias/{{ alias.id }}/decide" hx-vals='{"decision": "approved"}'
+                hx-target="#alias-{{ alias.id }}" hx-swap="outerHTML">Aprobar</button>
+        <button hx-post="/admin/alias/{{ alias.id }}/decide" hx-vals='{"decision": "rejected"}'
+                hx-target="#alias-{{ alias.id }}" hx-swap="outerHTML">Rechazar</button>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">Nada pendiente.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

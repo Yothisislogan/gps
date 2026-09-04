@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Cierres de vía</h1>
+<p class="warn">
+  Cada cierre activo entra en <em>todas</em> las rutas que calcula el sistema.
+  Esta página desvía el tráfico del país entero: un polígono de más deja gente
+  dando vueltas, y uno de menos manda gente a un cauce desbordado.
+</p>
+
+<h2>Nuevo cierre</h2>
+<form method="post" action="/admin/closures" class="form">
+  <label>Motivo
+    <input name="reason" required maxlength="120" placeholder="Cauce desbordado, obra, desfile…">
+  </label>
+  <label>Nota
+    <input name="note" maxlength="300">
+  </label>
+  <label>Termina (opcional)
+    <input name="ends_at" type="datetime-local">
+  </label>
+  <label>Polígono
+    <textarea name="ring" required rows="4"
+      placeholder='[[-86.27,12.14],[-86.26,12.14],[-86.26,12.15],[-86.27,12.15]]'></textarea>
+    <small>
+      Anillo GeoJSON: pares <code>[longitud, latitud]</code>. En ese orden — al
+      revés se excluye un pedazo del Pacífico y nadie se entera.
+    </small>
+  </label>
+  <button type="submit">Crear cierre</button>
+</form>
+
+<h2>Cierres</h2>
+<table>
+  <thead><tr><th>Motivo</th><th>Desde</th><th>Hasta</th><th>Estado</th><th></th></tr></thead>
+  <tbody>
+  {% for closure in closures %}
+    <tr>
+      <td>
+        <strong>{{ closure.reason }}</strong>
+        {% if closure.note %}<br><small>{{ closure.note }}</small>{% endif %}
+        <br><small><a href="https://www.openstreetmap.org/#map=15/{{ '%.5f'|format(closure.lat) }}/{{ '%.5f'|format(closure.lon) }}"
+                      target="_blank" rel="noopener">ver en el mapa</a></small>
+      </td>
+      <td>{{ closure.starts_at }}</td>
+      <td>{{ closure.ends_at or '—' }}</td>
+      <td>{% if closure.active %}<span class="ok">activo</span>{% else %}inactivo{% endif %}</td>
+      <td class="actions">
+        {% if closure.active %}
+        <button hx-post="/admin/closures/{{ closure.id }}/deactivate"
+                hx-target="closest td" hx-swap="innerHTML">Desactivar</button>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No hay cierres.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

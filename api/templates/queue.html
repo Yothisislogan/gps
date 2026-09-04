@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Cola de revisión</h1>
+
+<h2>Pares de conflación <small>({{ pairs|length }})</small></h2>
+<p class="note">
+  Puntaje entre 0.60 y 0.85: el conflador no pudo decidir. Dos gasolineras de la
+  misma marca a 60 m en lados opuestos de la carretera son dos lugares
+  distintos; el mismo restaurante escrito de dos maneras es uno solo.
+</p>
+<table>
+  <thead>
+    <tr><th>Puntaje</th><th>A</th><th>B</th><th>Distancia</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for pair in pairs %}
+    <tr id="pair-{{ pair.id }}">
+      <td>{{ '%.2f'|format(pair.score) }}</td>
+      <td>
+        <strong>{{ pair.left_name or pair.left_key }}</strong><br>
+        <small>{{ pair.left_source }} · {{ pair.left_category or '—' }}</small>
+      </td>
+      <td>
+        <strong>{{ pair.right_name or pair.right_key }}</strong><br>
+        <small>{{ pair.right_source }} · {{ pair.right_category or '—' }}</small>
+      </td>
+      <td>{% if pair.distance_m is not none %}{{ '%.0f'|format(pair.distance_m) }} m{% else %}—{% endif %}</td>
+      <td class="actions">
+        <button hx-post="/admin/queue/{{ pair.id }}/decide" hx-vals='{"decision": "merge"}'
+                hx-target="#pair-{{ pair.id }}" hx-swap="outerHTML">Unir</button>
+        <button hx-post="/admin/queue/{{ pair.id }}/decide" hx-vals='{"decision": "separate"}'
+                hx-target="#pair-{{ pair.id }}" hx-swap="outerHTML">Separar</button>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">Nada pendiente.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Lugares sugeridos <small>({{ suggestions|length }})</small></h2>
+<table>
+  <tbody>
+  {% for item in suggestions %}
+    <tr>
+      <td><strong>{{ item.payload.get('name', '—') }}</strong><br>
+          <small>{{ item.payload.get('category', '') }} · {{ '%.4f'|format(item.lat) }}, {{ '%.4f'|format(item.lon) }}</small></td>
+      <td>{{ item.payload.get('note', '') }}</td>
+      <td>{{ item.created_at }}</td>
+    </tr>
+  {% else %}
+    <tr><td>Nada pendiente.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Reportes <small>({{ reports|length }})</small></h2>
+<table>
+  <tbody>
+  {% for item in reports %}
+    <tr id="report-{{ item.id }}">
+      <td><strong>{{ item.kind }}</strong></td>
+      <td>{{ item.note or '' }}</td>
+      <td><a href="https://www.openstreetmap.org/#map=18/{{ '%.5f'|format(item.lat) }}/{{ '%.5f'|format(item.lon) }}"
+             target="_blank" rel="noopener">ver</a></td>
+      <td class="actions">
+        <button hx-post="/admin/report/{{ item.id }}/decide" hx-vals='{"decision": "accepted"}'
+                hx-target="closest td" hx-swap="innerHTML">Aceptar</button>
+        <button hx-post="/admin/report/{{ item.id }}/decide" hx-vals='{"decision": "rejected"}'
+                hx-target="closest td" hx-swap="innerHTML">Rechazar</button>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td>Nada pendiente.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
