@@ -647,6 +647,86 @@ function showMapFallback() {
 }
 
 /** Settings sheet: language, night mode, and where the data comes from. */
+/**
+ * The offline-map section of the settings sheet.
+ *
+ * Built empty and filled once offline.js reports what is stored, so opening
+ * settings never waits on Cache Storage. The size is shown before the download
+ * starts: this is a metered mobile connection in a country where data costs
+ * real money, and a silent hundred-megabyte fetch is a betrayal.
+ */
+function offlineRow(controller) {
+  const status = el('span', { class: 'muted', text: '…' });
+  const bar = el('div', { class: 'progress__bar', style: { width: '0%' } });
+  const progress = el('div', { class: 'progress', hidden: true }, [bar]);
+  const buttons = el('div', { class: 'segmented' });
+
+  const row = el('div', { class: 'setting setting--stacked' }, [
+    el('span', { class: 'setting-label', text: 'Mapa sin conexión' }),
+    status,
+    progress,
+    buttons,
+  ]);
+
+  import('./offline.js')
+    .then(async (offline) => {
+      const refresh = async () => {
+        const state = await offline.offlineStatus();
+        clear(buttons);
+        if (state.present) {
+          status.textContent = `Descargado: ${(state.bytes / 1e6).toFixed(0)} MB`;
+          buttons.appendChild(
+            el('button', {
+              class: 'segment',
+              type: 'button',
+              text: 'Borrar',
+              onClick: async () => {
+                await offline.clearOffline();
+                offline.useOfflineSource(controller.map, false);
+                refresh();
+              },
+            }),
+          );
+        } else {
+          const size = await offline.offlineSize();
+          status.textContent = size
+            ? `Managua, Masaya, Granada y Carazo — ${(size / 1e6).toFixed(0)} MB`
+            : 'Managua, Masaya, Granada y Carazo';
+        }
+        buttons.appendChild(
+          el('button', {
+            class: 'segment segment--on',
+            type: 'button',
+            text: state.present ? 'Actualizar' : 'Descargar',
+            onClick: async (event) => {
+              const button = event.currentTarget;
+              button.disabled = true;
+              progress.hidden = false;
+              try {
+                await offline.downloadCircle((fraction) => {
+                  bar.style.width = `${Math.round(fraction * 100)}%`;
+                });
+                toast('Mapa descargado');
+                refresh();
+              } catch (error) {
+                toast(String((error && error.message) || error), { kind: 'error' });
+              } finally {
+                button.disabled = false;
+                progress.hidden = true;
+              }
+            },
+          }),
+        );
+      };
+      await refresh();
+    })
+    .catch(() => {
+      status.textContent = 'No disponible en este navegador';
+    });
+
+  return row;
+}
+
 function openSettings(controller, applyTheme) {
   const themePreference = readThemePreference();
   const store = (value) => {
@@ -699,6 +779,7 @@ function openSettings(controller, applyTheme) {
     el('div', { class: 'settings' }, [
       languageRow,
       themeRow,
+      offlineRow(controller),
       el('div', { class: 'setting setting--stacked' }, [
         el('span', { class: 'setting-label', text: t('settings.attribution') }),
         el('p', { class: 'muted', text: '© OpenStreetMap contributors (ODbL) · © Overture Maps Foundation · Fotos: Mapillary (CC BY-SA)' }),
@@ -826,9 +907,16 @@ async function bootstrap() {
     .catch(() => {
       /* navigation simply stays unavailable; openDirections reports it */
     });
-  import('./offline.js').catch(() => {
-    /* offline tile management is a bonus, never a prerequisite */
-  });
+  import('./offline.js')
+    .then(async (offline) => {
+      // Register whatever is already stored, then follow connectivity: losing
+      // signal on the Carretera Sur should change nothing the driver can see.
+      await offline.activateOffline();
+      offline.autoSwitchOnConnectivity(controller.map);
+    })
+    .catch(() => {
+      /* offline tile management is a bonus, never a prerequisite */
+    });
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {
       /* no offline shell; everything still works online */

@@ -112,12 +112,13 @@
     <div class="sheet__body sheet-body"></div>
   </div>
 
+  <!-- ODbL requires this to be visible wherever the data is shown. The map
+       style carries the same string on each source, so any other client
+       rendering these tiles inherits it too. -->
   <footer class="attribution">
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
     ·
     <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture</a>
-    ·
-    <button type="button" class="linkish" id="about-button">Acerca de</button>
   </footer>
 
   <!-- map.js is the entry point: it boots the map and wires the shell. -->
