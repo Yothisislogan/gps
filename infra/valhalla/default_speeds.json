@@ -1,0 +1,35 @@
+[
+  {
+    "iso3166-1": "NI",
+    "rural": {
+      "way": [90, 80, 70, 60, 50, 40, 30, 20],
+      "link_exiting": [60, 55, 50, 45, 40, 30, 25, 15],
+      "link_turning": [45, 40, 35, 35, 30, 25, 20, 15],
+      "roundabout": [40, 35, 30, 30, 25, 20, 20, 15],
+      "driveway": 15,
+      "alley": 15,
+      "parking_aisle": 10,
+      "drive-through": 10
+    },
+    "suburban": {
+      "way": [80, 70, 55, 45, 40, 30, 25, 15],
+      "link_exiting": [55, 50, 45, 40, 35, 25, 20, 15],
+      "link_turning": [40, 35, 30, 30, 25, 20, 20, 15],
+      "roundabout": [35, 30, 25, 25, 20, 20, 15, 10],
+      "driveway": 12,
+      "alley": 12,
+      "parking_aisle": 8,
+      "drive-through": 8
+    },
+    "urban": {
+      "way": [60, 50, 40, 35, 30, 25, 20, 15],
+      "link_exiting": [45, 40, 35, 30, 25, 20, 20, 15],
+      "link_turning": [35, 30, 25, 25, 20, 20, 15, 10],
+      "roundabout": [30, 25, 20, 20, 20, 15, 15, 10],
+      "driveway": 10,
+      "alley": 10,
+      "parking_aisle": 8,
+      "drive-through": 8
+    }
+  }
+]

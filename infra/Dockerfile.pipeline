@@ -1,0 +1,62 @@
+# The pipeline image: everything the nightly build shells out to.
+#
+# tippecanoe has no Debian package, so it is built once in a throwaway stage and
+# only the binaries are copied forward.
+FROM debian:bookworm-slim AS tippecanoe
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential git libsqlite3-dev zlib1g-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG TIPPECANOE_VERSION=2.78.0
+RUN git clone --depth 1 --branch ${TIPPECANOE_VERSION} \
+        https://github.com/felt/tippecanoe.git /src/tippecanoe \
+    && make -C /src/tippecanoe -j"$(nproc)" \
+    && make -C /src/tippecanoe install
+
+
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PLANETILER_JAR=/opt/planetiler/planetiler.jar
+
+# osmium-tool: extracts, tag filtering, GeoJSON-seq export.
+# openjdk-21: Planetiler requires Java 21+.
+# postgresql-client: pg_dump for the nightly backup.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        osmium-tool \
+        openjdk-21-jre-headless \
+        postgresql-client \
+        curl ca-certificates jq \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=tippecanoe /usr/local/bin/tippecanoe /usr/local/bin/
+COPY --from=tippecanoe /usr/local/bin/tile-join /usr/local/bin/
+COPY --from=tippecanoe /usr/local/bin/tippecanoe-decode /usr/local/bin/
+
+# Planetiler is a single fat jar, pinned by version and verified against its
+# published checksum — an unpinned "latest" would change the map under you.
+ARG PLANETILER_VERSION=0.10.2
+RUN mkdir -p /opt/planetiler \
+    && curl -fsSL -o /opt/planetiler/planetiler.jar \
+        "https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}/planetiler.jar" \
+    && curl -fsSL -o /opt/planetiler/planetiler.jar.sha256 \
+        "https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}/planetiler.jar.sha256" \
+    && cd /opt/planetiler \
+    && echo "$(cat planetiler.jar.sha256)  planetiler.jar" | sha256sum -c -
+
+WORKDIR /app
+COPY requirements/base.txt requirements/pipeline.txt /app/requirements/
+RUN pip install --no-cache-dir -r requirements/pipeline.txt
+
+COPY common/ /app/common/
+COPY pipeline/ /app/pipeline/
+COPY docs/ /app/docs/
+COPY scripts/ /app/scripts/
+
+# Jobs write into /data and /custom_files, both bind-mounted.
+VOLUME ["/data", "/custom_files"]
+
+CMD ["bash", "/app/pipeline/nightly.sh"]

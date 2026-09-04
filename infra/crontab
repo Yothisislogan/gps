@@ -1,0 +1,32 @@
+# nicanav scheduled jobs — install with:
+#   crontab infra/crontab
+#
+# Times are the box's local time. Nicaragua is UTC-6 with no daylight saving,
+# so a UTC-configured server should shift these by six hours. The nightly build
+# is scheduled for the small hours because it briefly doubles disk usage while
+# writing .tmp artifacts beside the live ones.
+
+NICANAV_HOME=/opt/nicanav
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+MAILTO=ops@example.ni
+
+# Nightly: fresh OSM, tiles, routing graph, POI export, search index, QA.
+# The script is idempotent and publishes atomically, so a failed run leaves
+# yesterday's data serving rather than a half-built map.
+15 2 * * *  cd $NICANAV_HOME && ./pipeline/nightly.sh >> /var/log/nicanav/nightly.log 2>&1
+
+# Golden routes again at midday, against the graph that has been serving all
+# morning. Catches a bad build that the post-build check happened to pass.
+0 12 * * *  cd $NICANAV_HOME && docker compose -f infra/docker-compose.yml --profile tools run --rm pipeline python3 -m pipeline.qa.golden_routes --json >> /var/log/nicanav/golden.log 2>&1
+
+# Monthly: refresh Overture Places (a new release lands mid-month) and
+# re-conflate only what changed, joined on the GERS ids already stored.
+30 3 5 * *  cd $NICANAV_HOME && ./pipeline/monthly_overture.sh >> /var/log/nicanav/overture.log 2>&1
+
+# Database backup before the nightly build touches anything.
+45 1 * * *  cd $NICANAV_HOME && ./scripts/backup_db.sh >> /var/log/nicanav/backup.log 2>&1
+
+# Expire finished closures and stale reports so the router stops avoiding a
+# cauce that drained three weeks ago.
+0 * * * *   cd $NICANAV_HOME && docker compose -f infra/docker-compose.yml exec -T postgis psql -U nicanav -d nicanav -c "UPDATE closure SET active = false WHERE active AND ends_at IS NOT NULL AND ends_at < now(); UPDATE report SET status = 'expired' WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < now();" >> /var/log/nicanav/expire.log 2>&1

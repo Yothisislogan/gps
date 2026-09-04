@@ -1,0 +1,166 @@
+# nicanav on one box.
+#
+# Sizing note from docs/PLAN.md: the whole stack for a Nicaragua-sized dataset
+# fits in well under 2 GB of RAM. The heavy artifacts (base.pmtiles,
+# pois.pmtiles, the Valhalla graph) are files on disk served or memory-mapped,
+# not processes.
+#
+#   docker compose --env-file .env up -d
+#
+# Secrets live in .env, which is gitignored. See .env.example.
+
+name: nicanav
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${NICANAV_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../web:/srv/web:ro
+      # Tiles are served straight off disk with byte-range requests. Read-only:
+      # nginx must never be able to damage a published archive.
+      - ${NICANAV_TILES_DIR:-../data/tiles}:/srv/tiles:ro
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  valhalla:
+    # The community gis-ops/nilsnolde image is ARCHIVED and frozen at Valhalla
+    # 3.5.1; the maintained successor is the "scripted" image published from the
+    # main Valhalla repo. Pinned deliberately — a routing engine that changes
+    # under you is a regression you find while driving.
+    image: ghcr.io/valhalla/valhalla-scripted:3.8.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      - ${NICANAV_VALHALLA_DIR:-../data/valhalla}:/custom_files
+    environment:
+      serve_tiles: "True"
+      # Spanish instructions need the admin database (country/region names) and
+      # correct local times need the timezone database. Both default True on the
+      # scripted image, set explicitly so an upstream default change is visible.
+      build_admins: "True"
+      build_time_zones: "True"
+      build_elevation: "False"
+      build_transit: "False"
+      # The rebuild check hashes the PBF's *path string*, not its contents, and
+      # use_tiles_ignore_pbf=True (the image default) skips that check entirely.
+      # Both traps are disarmed here: the nightly job writes a date-stamped PBF
+      # filename, and this flag lets the new path be noticed.
+      use_tiles_ignore_pbf: "False"
+      build_tar: "True"
+      update_existing_config: "True"
+      # Our own speed table is mounted at /custom_files/default_speeds.json and
+      # referenced from valhalla.json; leaving this True would have the entrypoint
+      # download the upstream table over it on every start.
+      use_default_speeds_config: "False"
+      server_threads: "${NICANAV_VALHALLA_THREADS:-2}"
+    healthcheck:
+      # /status is cheap; the verbose form is not, and is disabled by default.
+      # It answers 402 while draining, which is exactly the "stop sending work"
+      # signal a restart should produce.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8002/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.24
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7700:7700"
+    environment:
+      MEILI_MASTER_KEY: "${NICANAV_MEILI_KEY:?set NICANAV_MEILI_KEY in .env}"
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  postgis:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: "${NICANAV_PG_DB:-nicanav}"
+      POSTGRES_USER: "${NICANAV_PG_USER:-nicanav}"
+      POSTGRES_PASSWORD: "${NICANAV_PG_PASSWORD:?set NICANAV_PG_PASSWORD in .env}"
+      # Spanish collation for correct ordering of names with accents.
+      LANG: es_NI.utf8
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # Numbered migrations run in order on an empty data directory.
+      - ../db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NICANAV_PG_USER:-nicanav} -d ${NICANAV_PG_DB:-nicanav}"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      NICANAV_VALHALLA_URL: "http://valhalla:8002"
+      NICANAV_MEILI_URL: "http://meilisearch:7700"
+      NICANAV_MEILI_KEY: "${NICANAV_MEILI_KEY}"
+      NICANAV_DATABASE_URL: "postgresql://${NICANAV_PG_USER:-nicanav}:${NICANAV_PG_PASSWORD}@postgis:5432/${NICANAV_PG_DB:-nicanav}"
+      NICANAV_TILES_DIR: /srv/tiles
+      NICANAV_PUBLIC_BASE_URL: "${NICANAV_PUBLIC_BASE_URL:-http://localhost:8080}"
+      NICANAV_CORS_ORIGINS: "${NICANAV_CORS_ORIGINS:-*}"
+      NICANAV_ADMIN_USER: "${NICANAV_ADMIN_USER:-admin}"
+      NICANAV_ADMIN_PASSWORD: "${NICANAV_ADMIN_PASSWORD:?set NICANAV_ADMIN_PASSWORD in .env}"
+      NICANAV_MAPILLARY_TOKEN: "${NICANAV_MAPILLARY_TOKEN:-}"
+      NICANAV_LOG_LEVEL: "${NICANAV_LOG_LEVEL:-INFO}"
+    volumes:
+      - ${NICANAV_TILES_DIR:-../data/tiles}:/srv/tiles:ro
+    depends_on:
+      postgis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/healthz', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Not started by `up`: this is the image the nightly cron job runs jobs in.
+  #   docker compose run --rm pipeline python3 -m pipeline.qa.golden_routes
+  pipeline:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.pipeline
+    profiles: ["tools"]
+    environment:
+      NICANAV_VALHALLA_URL: "http://valhalla:8002"
+      NICANAV_MEILI_URL: "http://meilisearch:7700"
+      NICANAV_MEILI_KEY: "${NICANAV_MEILI_KEY}"
+      NICANAV_DATABASE_URL: "postgresql://${NICANAV_PG_USER:-nicanav}:${NICANAV_PG_PASSWORD}@postgis:5432/${NICANAV_PG_DB:-nicanav}"
+      NICANAV_DATA_DIR: /data
+      NICANAV_TILES_DIR: /data/tiles
+    volumes:
+      - ${NICANAV_DATA_DIR:-../data}:/data
+      - ${NICANAV_VALHALLA_DIR:-../data/valhalla}:/custom_files
+
+volumes:
+  meili_data:
+  pg_data:

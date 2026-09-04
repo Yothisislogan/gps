@@ -77,10 +77,14 @@ NICARAGUA_AUTO_COSTING: dict[str, Any] = {
     "shortest": False,
 }
 
-#: Extra penalty applied when the user has *not* opted out of dirt roads.  Unpaved
-#: roads stay usable — many places are only reachable that way — but a dirt
-#: shortcut must never beat a paved route of similar length.
-UNPAVED_PENALTY_SECONDS = 300.0
+#: Valhalla has no "penalise unpaved" costing knob — the auto option is
+#: ``exclude_unpaved`` and there is nothing in between.  Discouraging dirt roads
+#: without banning them therefore happens at *tile build* time: Valhalla derives
+#: edge speeds from the OSM ``surface`` tag, so an unpaved tertiary carries a low
+#: speed and a dirt shortcut loses to a paved detour on time while staying
+#: routable.  Many Nicaraguan places are only reachable on dirt, so that is the
+#: behaviour we want by default; ``avoid_unpaved`` below is the user-facing
+#: "Evitar caminos de tierra" toggle.
 
 
 def build_route_payload(
@@ -130,19 +134,22 @@ def build_route_payload(
 
     costing_options = {**NICARAGUA_AUTO_COSTING}
     if avoid_unpaved:
-        # UNVERIFIED: `exclude_unpaved` exists on auto costing in recent Valhalla;
-        # if a deploy rejects it, drop to the penalty below and log once.
         costing_options["exclude_unpaved"] = True
-    else:
-        costing_options["unpaved_penalty"] = UNPAVED_PENALTY_SECONDS
     if costing_overrides:
         costing_options.update(costing_overrides)
 
+    # `language` and `units` go at the TOP level.  Valhalla still reads a legacy
+    # `directions_options` object, but it lifts only units/narrative/format/
+    # language out of it and silently drops everything else — so a request that
+    # nests banner_instructions or shape_format in there gets no instructions and
+    # no error.  Keeping every directions option in one place, at the top level,
+    # is what avoids that trap.
     payload: dict[str, Any] = {
         "locations": payload_locations,
         "costing": costing,
         "costing_options": {costing: costing_options},
-        "directions_options": {"language": language, "units": units},
+        "language": language,
+        "units": units,
     }
     if alternates:
         payload["alternates"] = int(alternates)
@@ -153,9 +160,13 @@ def build_route_payload(
     if output_format:
         payload["format"] = output_format
         if output_format == "osrm":
-            # The nav clients (Ferrostar, MapLibre navigation) read these.
+            # Top-level booleans, and only meaningful for format=osrm.  Note for
+            # the client: Valhalla writes each maneuver's bannerInstructions and
+            # voiceInstructions onto the *previous* step (the Mapbox convention),
+            # and the final arrive step carries empty arrays.
             payload["banner_instructions"] = banner_instructions
             payload["voice_instructions"] = voice_instructions
+            payload["turn_lanes"] = True  # lane guidance in the sub-banner
     return payload
 
 

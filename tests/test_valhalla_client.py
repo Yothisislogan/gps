@@ -77,9 +77,14 @@ class TestPayloadShape:
         assert from_tuple["locations"] == from_model["locations"] == from_dict["locations"]
         assert from_tuple["locations"][0] == {"lat": 12.1415, "lon": -86.1682, "type": "break"}
 
-    def test_spanish_is_the_default_language(self):
+    def test_spanish_is_the_default_language_at_the_top_level(self):
+        # Nesting these under directions_options still "works" for language and
+        # units, but Valhalla silently drops the other directions options from
+        # there, so everything stays top-level.
         payload = build_route_payload([MGA, GRANADA])
-        assert payload["directions_options"] == {"language": "es-ES", "units": "kilometers"}
+        assert payload["language"] == "es-ES"
+        assert payload["units"] == "kilometers"
+        assert "directions_options" not in payload
 
     def test_costing_options_are_nested_under_the_costing_name(self):
         payload = build_route_payload([MGA, GRANADA], costing="bicycle")
@@ -92,14 +97,30 @@ class TestPayloadShape:
         assert build_route_payload([MGA, GRANADA])["costing_options"]["auto"]["use_tracks"] == 0.0
         assert NICARAGUA_AUTO_COSTING["use_tracks"] == 0.0
 
-    def test_unpaved_is_penalised_by_default_and_excluded_on_request(self):
+    def test_unpaved_is_allowed_by_default_and_excluded_on_request(self):
+        # Many Nicaraguan places are only reachable on dirt, so the default must
+        # not exclude it; the discouragement lives in the build-time speed table.
         default = build_route_payload([MGA, GRANADA])["costing_options"]["auto"]
-        assert default["unpaved_penalty"] > 0
         assert "exclude_unpaved" not in default
 
         avoided = build_route_payload([MGA, GRANADA], avoid_unpaved=True)["costing_options"]["auto"]
         assert avoided["exclude_unpaved"] is True
-        assert "unpaved_penalty" not in avoided
+
+    def test_no_invented_costing_keys(self):
+        # Valhalla ignores unknown costing keys silently, so a typo here would
+        # never surface as an error — only as routes that ignore the setting.
+        known = {
+            "use_tracks", "use_living_streets", "service_penalty", "maneuver_penalty",
+            "use_ferry", "use_highways", "use_tolls", "country_crossing_penalty",
+            "shortest", "exclude_unpaved", "top_speed", "alley_penalty", "gate_penalty",
+            "destination_only_penalty", "closure_factor", "speed_penalty_factor",
+            "service_factor", "use_distance", "ignore_closures", "fixed_speed",
+        }
+        for options in (
+            build_route_payload([MGA, GRANADA])["costing_options"]["auto"],
+            build_route_payload([MGA, GRANADA], avoid_unpaved=True)["costing_options"]["auto"],
+        ):
+            assert set(options) <= known, set(options) - known
 
     def test_heading_applies_only_to_the_first_location(self):
         payload = build_route_payload([MGA, GRANADA], heading=270.0)
@@ -123,8 +144,11 @@ class TestPayloadShape:
     def test_osrm_format_asks_for_banner_and_voice_instructions(self):
         payload = build_route_payload([MGA, GRANADA], output_format="osrm")
         assert payload["format"] == "osrm"
+        # Top level, not nested: nested under directions_options these are dropped
+        # without any error and the nav client gets no guidance.
         assert payload["banner_instructions"] is True
         assert payload["voice_instructions"] is True
+        assert payload["turn_lanes"] is True
 
     def test_native_format_does_not_ask_for_nav_instructions(self):
         payload = build_route_payload([MGA, GRANADA])

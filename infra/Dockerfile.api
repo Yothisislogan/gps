@@ -1,0 +1,35 @@
+# The API image.
+#
+# Deliberately slim: this container serves JSON, nothing else. Tiles, fonts and
+# the app shell are static files behind nginx and never enter this image.
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Dependencies first so a code change does not re-resolve the whole tree.
+COPY requirements/base.txt requirements/api.txt /app/requirements/
+RUN pip install --no-cache-dir -r requirements/api.txt
+
+# common/ is the shared foundation; api/ is the service; pipeline/geocode is the
+# one documented cross-import (the pure address grammar). The rest of pipeline/
+# comes along because it is a few hundred kilobytes of text and splitting the
+# package would buy nothing.
+COPY common/ /app/common/
+COPY api/ /app/api/
+COPY pipeline/ /app/pipeline/
+COPY docs/taxonomy.csv docs/carreteras.csv /app/docs/
+
+# Never run the API as root.
+RUN useradd --system --uid 10001 --create-home nicanav && chown -R nicanav /app
+USER nicanav
+
+EXPOSE 8000
+
+# One worker per vCPU is wrong here: this box also runs Valhalla, PostGIS and
+# Meilisearch. Two workers handle the app's traffic with room to spare, and the
+# workload is I/O-bound anyway.
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
