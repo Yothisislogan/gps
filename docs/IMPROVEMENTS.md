@@ -76,3 +76,59 @@ The connection recovery follows psycopg's documented behavior: a timed-out
 initial pool wait closes that pool, and background retries have a finite budget.
 See [psycopg pool API](https://www.psycopg.org/psycopg3/docs/api/pool.html) and
 [connection-pool behavior](https://www.psycopg.org/psycopg3/docs/advanced/pool.html).
+
+## Second implementation: refresh evidence and usability
+
+The [data trust review](DATA-TRUST-REVIEW.md) records the next priorities. This
+implementation adds the following bounded improvements:
+
+- Nightly refresh stops at the first failed dependency; later stages cannot
+  rebuild from stale intermediate output. Run metadata records the failed stage,
+  partial scope and last full success. Earlier stages may already be published.
+- OSM metadata preserves the upstream replication timestamp when available.
+  Overture metadata preserves release, successful extraction time, record count,
+  extraction threshold and file digest. Missing or invalid metadata stays unknown.
+- Overture is checked daily. Matching extracts skip downloading; publication is
+  skipped only when that exact extract completed its previous refresh. Failed
+  publication is retried. Failed discovery cannot claim the fallback is current;
+  an operator may explicitly choose a release. Empty/failed extracts preserve the
+  previous normalized file. Survey input is included in monthly conflation.
+- `/api/healthz` and the admin dashboard expose source evidence separately from
+  file age and pipeline state. The API receives a read-only metadata mount.
+- Moderation now says the decision was saved and awaits application, including
+  an explanatory note before the action. Applying merge/separate decisions to
+  production data remains unimplemented.
+- Icon buttons, category chips and the shared touch size are now 48 pixels;
+  keyboard focus is visible on those controls and the search field.
+
+Validation passed all 948 Python tests and 54 JavaScript tests, lint/format,
+generated assets and curated-data validation.
+
+Failure-path tests exercise the actual shell orchestration with stub services:
+failed source imports, failed database loading, partial runs, retries after failed
+publication, unchanged releases and a manually replaced source. Import tests cover
+empty/interrupted streams, digest mismatch and failed discovery. API tests verify
+unknown metadata and recorded failure/source details.
+
+This does **not** implement a coordinated candidate release, pre-publication route
+QA, a complete moderation publication worker or automatic re-verification. Those
+remain the next larger integration changes. Actual production source freshness
+and rendering on phones still require deployment and field validation.
+
+### Operator rollout
+
+Rebuild the API/pipeline images and recreate the API service to add its read-only
+metadata mount. Install the updated `infra/crontab` on the pipeline host. Metadata
+is written under `data/metadata` by default; use the same `NICANAV_METADATA_DIR`
+for host jobs and Compose when overriding it. A first deployment correctly shows
+"Sin registro" until successful imports/runs write evidence.
+
+Inspect `data.sources` and `data.pipelines` in `/api/healthz`. Source import success
+is not proof of coordinated publication; compare it with the pipeline's stored
+`last_success_sources`. `last_full_success_at` advances only for a successful full
+run. A partial success is labeled partial. A process killed without an exit trap
+can remain `running`; the dashboard describes that as running or interrupted.
+
+After a failure, fix the named stage and rerun the job; Overture retries downstream
+publication even when its cached source is unchanged. QA is still post-publication,
+so investigate and roll back affected services/artifacts if those checks fail.

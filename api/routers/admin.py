@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 from api.clients.db import Database
 from api.deps import get_db, get_settings_dep
 from common.config import Settings
+from common.data_status import data_status
 from common.geo import NICARAGUA_BBOX
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -216,6 +217,7 @@ async def dashboard(
             "kpi_taken_at": taken_at,
             "available": getattr(database, "available", False),
             "tiles": _tile_ages(request),
+            "data_status": data_status(request.app.state.settings.metadata_dir),
         },
     )
 
@@ -387,9 +389,9 @@ async def decide_pair(
         """,
         (decision, user, pair_id),
     )
-    label = "Unidos" if decision == "merge" else "Separados"
+    label = "unir" if decision == "merge" else "separar"
     return HTMLResponse(
-        f'<tr class="decided"><td colspan="5">{label} por {user}</td></tr>'
+        f'<tr class="decided"><td colspan="5">Decisión guardada: {label} por {user}. Pendiente de aplicar al mapa.</td></tr>'
         if ok
         else '<tr class="failed"><td colspan="5">No se pudo guardar</td></tr>'
     )

@@ -173,7 +173,12 @@ class FakeValhalla:
 
 @pytest.fixture
 def app_and_fakes(tmp_path):
-    settings = Settings(_env_file=None, tiles_dir=tmp_path / "tiles", data_dir=tmp_path)
+    settings = Settings(
+        _env_file=None,
+        tiles_dir=tmp_path / "tiles",
+        data_dir=tmp_path,
+        metadata_dir=tmp_path / "metadata",
+    )
     app = create_app(settings)
     database, meili, valhalla = FakeDatabase(), FakeMeili(), FakeValhalla()
     app.state.db = database
@@ -202,6 +207,25 @@ class TestHealth:
 
     def test_reports_missing_tiles(self, client):
         assert client.get("/api/healthz").json()["tiles"]["base.pmtiles"] is None
+
+    def test_unknown_freshness_is_not_inferred_from_tiles(self, client):
+        body = client.get("/api/healthz").json()
+        assert body["data"]["sources"]["osm"]["status"] == "unknown"
+        assert body["data"]["pipelines"]["nightly"]["status"] == "unknown"
+
+    def test_exposes_recorded_source_and_failed_run(self, client, app_and_fakes):
+        from pipeline.status import save
+
+        app, *_ = app_and_fakes
+        directory = app.state.settings.metadata_dir
+        save(
+            directory / "osm.json",
+            {"status": "imported", "source_timestamp": "2026-09-01T00:00:00Z"},
+        )
+        save(directory / "nightly.json", {"status": "failed", "stage": "load pois"})
+        body = client.get("/api/healthz").json()["data"]
+        assert body["sources"]["osm"]["source_timestamp"] == "2026-09-01T00:00:00Z"
+        assert body["pipelines"]["nightly"]["status"] == "failed"
 
 
 class TestRoute:

@@ -327,7 +327,8 @@ class TestActions:
         _, database = app_and_db
         response = client.post("/admin/queue/1/decide", data={"decision": "merge"}, headers=AUTH)
         assert response.status_code == 200
-        assert "Unidos" in response.text
+        assert "Decisión guardada: unir" in response.text
+        assert "Pendiente de aplicar al mapa" in response.text
         sql, params = database.writes[-1]
         assert "poi_match_queue" in sql
         # The audit trail is the difference between a queue and a mess.

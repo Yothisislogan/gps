@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # The nightly build, end to end.
 #
-# Design rules, in priority order:
-#   1. Never publish a broken artifact. Every step writes .tmp and renames.
-#   2. A failure leaves yesterday's data serving. Stale beats wrong.
-#   3. Say what happened. This runs unattended; the log is the only witness.
+# Stops on the first failure. Earlier successful steps may already be live;
+# coordinated publication across files, database and services is still pending.
 #
 #   ./pipeline/nightly.sh [--skip-tiles] [--skip-valhalla] [--skip-pois] [--force]
 
@@ -22,25 +20,13 @@ for arg in "$@"; do
   esac
 done
 
-take_lock
 ensure_dirs
-
-STARTED="$(date -u +%s)"
-FAILED_STEPS=()
-
-# Run a step, timed. A failed step is recorded and the build continues, because
-# a broken POI export must not stop the road data from being published.
-step() {
-  local name="$1"; shift
-  local began; began="$(date -u +%s)"
-  log "=== ${name} ==="
-  if "$@"; then
-    log "=== ${name}: ok in $(( $(date -u +%s) - began ))s ==="
-  else
-    log "=== ${name}: FAILED after $(( $(date -u +%s) - began ))s ==="
-    FAILED_STEPS+=("$name")
-  fi
-}
+take_lock
+SCOPE=full
+if [ "$SKIP_TILES" -eq 1 ] || [ "$SKIP_VALHALLA" -eq 1 ] || [ "$SKIP_POIS" -eq 1 ]; then
+  SCOPE=partial
+fi
+start_run "$SCOPE"
 
 py() { (cd "$REPO_ROOT" && python3 "$@"); }
 
@@ -64,9 +50,7 @@ if [ "$SKIP_POIS" -eq 0 ]; then
   # the next nightly build instead of being overwritten by it. Tiles and the
   # search index are both derived from the database, never from the raw merge.
   #
-  # Each step reads what the previous one published, so a failure part-way
-  # leaves the last good artifact in place and the map keeps showing yesterday's
-  # POIs rather than none.
+  # Stop before any dependent step can consume stale intermediate output.
   step "ingest osm pois"  py -m pipeline.pois.fetch_osm_pois
 
   # Overture publishes monthly; pipeline/monthly_overture.sh refreshes it. The
@@ -90,12 +74,5 @@ fi
 step "golden routes"      py -m pipeline.qa.golden_routes --json
 step "kpis"               py -m pipeline.qa.kpis
 
-ELAPSED=$(( $(date -u +%s) - STARTED ))
-if [ ${#FAILED_STEPS[@]} -eq 0 ]; then
-  log "nightly build finished in ${ELAPSED}s — all steps ok"
-  exit 0
-fi
-
-log "nightly build finished in ${ELAPSED}s with ${#FAILED_STEPS[@]} failed step(s): ${FAILED_STEPS[*]}"
-log "the previously published artifacts are still being served"
-exit 1
+record_status succeeded --stage "complete"
+log "nightly build finished ($SCOPE)"

@@ -97,4 +97,6 @@ osmium export "${OSM_DIR}/roads.osm.pbf" --overwrite --geometry-types=linestring
   --output-format=geojsonseq -o "${EXPORT_DIR}/roads.geojsonseq.tmp"
 publish "${EXPORT_DIR}/roads.geojsonseq.tmp" "${EXPORT_DIR}/roads.geojsonseq"
 
+SOURCE_TIMESTAMP="$(osmium fileinfo -g header.option.osmosis_replication_timestamp "$PBF")"
+(cd "$REPO_ROOT" && python3 -m pipeline.status "$METADATA_DIR" osm source --source-timestamp "$SOURCE_TIMESTAMP")
 log "done"

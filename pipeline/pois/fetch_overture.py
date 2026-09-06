@@ -24,6 +24,7 @@ Output: data/exports/src_overture.geojsonseq (PoiRecord-shaped properties)
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import re
@@ -33,9 +34,11 @@ from pathlib import Path
 from typing import Any
 
 from common.config import get_settings
+from common.data_status import read_status
 from common.geo import NICARAGUA_BBOX
-from pipeline.common.io import ensure_dir, setup_logging, write_geojsonseq
+from pipeline.common.io import atomic_output, ensure_dir, setup_logging, write_geojsonseq
 from pipeline.pois.taxonomy import category_for_overture
+from pipeline.status import save, timestamp
 
 __all__ = ["build_query", "fetch", "main", "record_from_row"]
 
@@ -66,7 +69,7 @@ def _connect():
     return con
 
 
-def discover_release(con) -> str:
+def discover_release(con, *, allow_fallback: bool = True) -> str:
     """Find the newest release on S3, falling back to the pinned one.
 
     Overture retains only the last two releases, so "latest" has to be looked up
@@ -82,7 +85,9 @@ def discover_release(con) -> str:
             log.info("overture releases available: %s", ", ".join(releases))
             return releases[0]
     except Exception:
-        log.warning("could not list Overture releases; using %s", FALLBACK_RELEASE, exc_info=True)
+        log.warning("could not list Overture releases", exc_info=True)
+    if not allow_fallback:
+        raise RuntimeError("Cannot establish newest Overture release; retry or specify --release")
     return FALLBACK_RELEASE
 
 
@@ -101,6 +106,8 @@ def build_query(release: str, columns: set[str], *, bbox=None, min_confidence: f
     only while it still exists.  Selecting a dropped column would fail the whole
     job, and selecting neither would silently produce uncategorised places.
     """
+    if not _RELEASE_RE.fullmatch(release):
+        raise ValueError("Invalid Overture release identifier")
     min_lon, min_lat, max_lon, max_lat = bbox or NICARAGUA_BBOX
 
     parts = [
@@ -286,22 +293,74 @@ def build_parser() -> argparse.ArgumentParser:
         help="keep the raw pull so conflation can be re-run without re-downloading",
     )
     parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument(
+        "--skip-unchanged",
+        action="store_true",
+        help="exit 3 if a matching extract is already present",
+    )
+    parser.add_argument("--metadata", type=Path, default=settings.metadata_dir / "overture.json")
     parser.add_argument("--min-confidence", type=float, default=0.3)
     parser.add_argument("--log-level", default="INFO")
     return parser
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     setup_logging(args.log_level)
     try:
-        written = write_geojsonseq(
-            args.output,
-            fetch(
-                args.release,
-                min_confidence=args.min_confidence,
-                parquet_out=None if args.no_cache else args.parquet_cache,
-            ),
+        if args.release and not _RELEASE_RE.fullmatch(args.release):
+            raise ValueError("Invalid Overture release identifier")
+        if args.release:
+            resolved = args.release
+        else:
+            con = _connect()
+            try:
+                # Do not turn an unsuccessful daily check into a fallback success.
+                resolved = discover_release(con, allow_fallback=False)
+            finally:
+                con.close()
+        previous = read_status(args.metadata)
+        if (
+            args.skip_unchanged
+            and previous.get("release") == resolved
+            and previous.get("min_confidence") == args.min_confidence
+            and args.output.is_file()
+            and args.output.stat().st_size > 0
+            and previous.get("sha256") == file_sha256(args.output)
+        ):
+            log.info("release %s unchanged; keeping validated extract", resolved)
+            return 3
+        # Guard against a valid query returning no Nicaragua places. The old
+        # extract and metadata remain intact on empty results or stream failure.
+        with atomic_output(args.output) as candidate:
+            written = write_geojsonseq(
+                candidate,
+                fetch(
+                    resolved,
+                    min_confidence=args.min_confidence,
+                    parquet_out=None if args.no_cache else args.parquet_cache,
+                ),
+            )
+            if written == 0:
+                raise RuntimeError("Empty Overture extract; refusing to replace previous data")
+        save(
+            args.metadata,
+            {
+                "status": "imported",
+                "release": resolved,
+                "imported_at": timestamp(),
+                "records": written,
+                "min_confidence": args.min_confidence,
+                "sha256": file_sha256(args.output),
+            },
         )
     except Exception:
         log.exception("Overture fetch failed")

@@ -1,39 +1,41 @@
 #!/usr/bin/env bash
-# Monthly Overture Places refresh.
-#
-# Overture publishes a release roughly monthly. Because every merged POI keeps
-# its Overture GERS id, this is a join and not a re-conflation: only new and
-# changed ids need scoring, so the monthly run is cheap and — importantly —
-# cannot reshuffle POIs that a human already reviewed.
-#
+# Check daily for a monthly Overture release. Full conflation is still used.
 #   ./pipeline/monthly_overture.sh [release]
 
 SCRIPT_NAME=monthly_overture
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 RELEASE="${1:-}"
-
-take_lock
 ensure_dirs
+take_lock
 require_free_space 2048
+py() { (cd "$REPO_ROOT" && python3 "$@"); }
+ALREADY_APPLIED="$(py -m pipeline.status "$METADATA_DIR" "$SCRIPT_NAME" check)"
+start_run
+CURRENT_STAGE="fetch overture"
+record_status running --stage "$CURRENT_STAGE"
+FETCH_ARGS=(--skip-unchanged --metadata "$METADATA_DIR/overture.json")
+[ -n "$RELEASE" ] && FETCH_ARGS+=(--release "$RELEASE")
+FETCH_CODE=0
+py -m pipeline.pois.fetch_overture "${FETCH_ARGS[@]}" || FETCH_CODE=$?
+if [ "$FETCH_CODE" -eq 3 ]; then
+  if [ "$ALREADY_APPLIED" = yes ]; then
+    record_status unchanged --stage "release unchanged"
+    log "no new Overture release; previous refresh completed"
+    exit 0
+  fi
+  log "extract unchanged, but previous publication incomplete; retrying downstream steps"
+elif [ "$FETCH_CODE" -ne 0 ]; then
+  exit "$FETCH_CODE"
+fi
 
-log "fetching Overture places"
-(cd "$REPO_ROOT" && python3 -m pipeline.pois.fetch_overture ${RELEASE:+--release "$RELEASE"}) \
-  || die "overture fetch failed"
-
-log "re-conflating"
-(cd "$REPO_ROOT" && python3 -m pipeline.pois.conflate \
-    --input "${EXPORT_DIR}/src_osm.geojsonseq" \
-    --input "${EXPORT_DIR}/src_overture.geojsonseq" \
-    --output "${EXPORT_DIR}/pois_merged.geojsonseq" \
-    --queue "${EXPORT_DIR}/review_queue.json") || die "conflation failed"
-
-log "loading into postgis"
-(cd "$REPO_ROOT" && python3 -m pipeline.pois.load_pois) || die "load failed"
-
-log "exporting and republishing"
-(cd "$REPO_ROOT" && python3 -m pipeline.pois.export_geojson) || die "export failed"
-"${REPO_ROOT}/pipeline/build_tiles.sh" --pois-only || die "poi tiles failed"
-(cd "$REPO_ROOT" && python3 -m pipeline.search.build_index) || die "reindex failed"
-
+CONFLATE_ARGS=(--input "${EXPORT_DIR}/src_osm.geojsonseq" --input "${EXPORT_DIR}/src_overture.geojsonseq")
+[ -s "${EXPORT_DIR}/src_survey.geojsonseq" ] && CONFLATE_ARGS+=(--input "${EXPORT_DIR}/src_survey.geojsonseq")
+step "conflate pois" py -m pipeline.pois.conflate "${CONFLATE_ARGS[@]}" \
+  --output "${EXPORT_DIR}/pois_merged.geojsonseq" --queue "${EXPORT_DIR}/review_queue.json"
+step "load pois" py -m pipeline.pois.load_pois
+step "export pois" py -m pipeline.pois.export_geojson
+step "build poi tiles" "${REPO_ROOT}/pipeline/build_tiles.sh" --pois-only
+step "reindex search" py -m pipeline.search.build_index
+record_status succeeded --stage "complete"
 log "done"
