@@ -127,6 +127,7 @@ everyone gets them, not in a private table here.
 
 ## Further reading
 
+- [docs/UX-BRIEF.md](docs/UX-BRIEF.md) — UX priorities, implementation phases and acceptance criteria
 - [docs/PLAN.md](docs/PLAN.md) — the whole plan and the reasoning behind every choice
 - [docs/SPEC.md](docs/SPEC.md) — the normative interface contract
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) — operating it, and the first-deploy checklist
