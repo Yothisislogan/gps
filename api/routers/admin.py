@@ -58,6 +58,14 @@ def require_admin(request: Request, settings: Settings = Depends(get_settings_de
     expected_user = settings.admin_user
     expected_password = settings.admin_password
 
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        allowed = {settings.public_base_url.rstrip("/"), str(request.base_url).rstrip("/")}
+        if request.headers.get("sec-fetch-site") == "cross-site" or (
+            origin is not None and origin.rstrip("/") not in allowed
+        ):
+            raise HTTPException(status_code=403, detail="Origen no autorizado")
+
     if not expected_password:
         # Refuse rather than fall open. An admin UI with no password configured
         # is worse than no admin UI.
@@ -74,8 +82,8 @@ def require_admin(request: Request, settings: Settings = Depends(get_settings_de
             user, _, password = decoded.partition(":")
         except (ValueError, UnicodeDecodeError):
             user, password = "", ""
-        if secrets.compare_digest(user, expected_user) and secrets.compare_digest(
-            password, expected_password
+        if secrets.compare_digest(user.encode(), expected_user.encode()) and secrets.compare_digest(
+            password.encode(), expected_password.encode()
         ):
             return user
 

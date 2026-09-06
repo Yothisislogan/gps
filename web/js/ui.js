@@ -19,6 +19,8 @@ const LANG_KEY = 'nicanav.lang';
  */
 const STRINGS = {
   es: {
+    'dir.closuresUnavailable': 'No pudimos comprobar los cierres de calles. Revisá las condiciones antes de salir.',
+    'dir.avoidUnpaved': 'Evitar caminos de tierra',
     'search.placeholder': 'Buscar un lugar o una dirección',
     'search.cancel': 'Cancelar',
     'search.clear': 'Borrar',
@@ -124,6 +126,8 @@ const STRINGS = {
     'settings.attribution': 'Datos y licencias',
   },
   en: {
+    'dir.closuresUnavailable': 'Road closures could not be checked. Check conditions before leaving.',
+    'dir.avoidUnpaved': 'Avoid unpaved roads',
     'search.placeholder': 'Search a place or an address',
     'search.cancel': 'Cancel',
     'search.clear': 'Clear',

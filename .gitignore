@@ -15,6 +15,8 @@ custom_files/
 !.env.example
 !infra/.env.example
 secrets/
+infra/admin.htpasswd
+web/config.js
 
 # --- python ---
 __pycache__/

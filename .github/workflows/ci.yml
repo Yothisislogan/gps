@@ -38,7 +38,7 @@ jobs:
         run: pytest -q -m "not network and not docker"
 
   javascript:
-    name: navigation geometry
+    name: navigation and browser logic
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,30 +92,6 @@ jobs:
         run: pip install -r requirements/dev.txt
 
       # Each file is validated by the repository's own loader, so the check
-      # cannot drift from how the code actually reads it. A missing file is a
-      # clear skip rather than a confusing failure.
+      # cannot drift from how the code actually reads it. Missing data fails.
       - name: Validate
-        run: |
-          python3 - <<'PY'
-          import pathlib, sys
-
-          checks = [
-              ("docs/taxonomy.csv", "pipeline.pois.taxonomy", "load_taxonomy"),
-              ("docs/carreteras.csv", "pipeline.geocode.kmpost", "load_highways"),
-              ("docs/golden_routes.json", "pipeline.qa.golden_routes", "load_cases"),
-          ]
-          failed = False
-          for path, module_name, function_name in checks:
-              if not pathlib.Path(path).exists():
-                  print(f"skip {path} (not present)")
-                  continue
-              try:
-                  module = __import__(module_name, fromlist=[function_name])
-                  result = getattr(module, function_name)()
-                  size = len(result[0]) if isinstance(result, tuple) else len(result)
-                  print(f"ok   {path}: {size} entries")
-              except Exception as error:
-                  print(f"FAIL {path}: {error}")
-                  failed = True
-          sys.exit(1 if failed else 0)
-          PY
+        run: python3 scripts/validate_data.py

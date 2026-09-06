@@ -11,10 +11,15 @@ db/migrations/001_init.sql have exactly one place to be wrong.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
+from api.errors import ApiError
 from common.models import PoiCard, PoiPhoto, PoiStatus, SearchHit, SearchKind
 
 __all__ = ["Database"]
@@ -40,6 +45,9 @@ class Database:
         self._max_size = max_size
         self._pool: Any = None
         self.available = False
+        self._connect_lock = asyncio.Lock()
+        self._retry_at = 0.0
+        self._closed = False
 
     async def connect(self) -> None:
         """Open the pool.  A failure here is logged, not raised.
@@ -48,6 +56,15 @@ class Database:
         — on a one-box deployment, a database restart should not black out the
         map for everyone on the road.
         """
+        async with self._connect_lock:
+            if self._closed or self.available or time.monotonic() < self._retry_at:
+                return
+            await self._connect()
+
+    async def _connect(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
         try:
             from psycopg_pool import AsyncConnectionPool
         except ImportError:  # pragma: no cover - psycopg is an api-image dependency
@@ -55,41 +72,81 @@ class Database:
             return
         try:
             self._pool = AsyncConnectionPool(
-                self.dsn, min_size=self._min_size, max_size=self._max_size, open=False
+                self.dsn,
+                min_size=self._min_size,
+                max_size=self._max_size,
+                open=False,
+                timeout=1.0,
+                kwargs={"connect_timeout": 3},
+                reconnect_failed=self._reconnect_failed,
             )
-            await self._pool.open(wait=True, timeout=5.0)
+            await self._pool.open(wait=True, timeout=1.0)
             self.available = True
             log.info("database pool ready")
         except Exception:
-            log.warning(
-                "database unavailable; POI cards and submissions are disabled", exc_info=True
-            )
+            log.warning("database unavailable; retrying on a later request", exc_info=True)
+            if self._pool is not None:
+                await self._pool.close()
             self._pool = None
             self.available = False
+            self._retry_at = time.monotonic() + 5.0
+
+    async def _reconnect_failed(self, pool: Any) -> None:
+        # psycopg stops replenishing after its retry budget; the next request
+        # must be able to create a new pool after a prolonged database outage.
+        if self._pool is pool:
+            self.available = False
+            self._retry_at = time.monotonic() + 5.0
 
     async def close(self) -> None:
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None
+        async with self._connect_lock:
+            self._closed = True
+            if self._pool is not None:
+                await self._pool.close()
+                self._pool = None
             self.available = False
 
+    @asynccontextmanager
+    async def _connection(self) -> AsyncIterator[Any]:
+        if not self.available:
+            await self.connect()
+        if self._pool is None or not self.available:
+            raise self._unavailable()
+        from psycopg import OperationalError
+        from psycopg_pool import PoolTimeout
+
+        try:
+            async with self._pool.connection(timeout=1.0) as conn:
+                yield conn
+        except PoolTimeout as exc:
+            # Saturation is temporary too, but rebuilding a busy pool makes it worse.
+            raise self._unavailable() from exc
+        except OperationalError as exc:
+            self.available = False
+            self._retry_at = time.monotonic() + 5.0
+            raise self._unavailable() from exc
+
+    @staticmethod
+    def _unavailable() -> ApiError:
+        return ApiError(
+            "database_unavailable",
+            "La base de datos no está disponible en este momento. Probá de nuevo.",
+            status_code=503,
+        )
+
     async def _fetch(self, sql: str, params: Any = None) -> list[dict[str, Any]]:
-        if not self.available or self._pool is None:
-            return []
         from psycopg.rows import dict_row
 
-        async with self._pool.connection() as conn:
+        async with self._connection() as conn:
             conn.row_factory = dict_row
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(sql, params)
                 return list(await cur.fetchall())
 
     async def _execute(self, sql: str, params: Any = None) -> Any:
-        if not self.available or self._pool is None:
-            raise RuntimeError("database unavailable")
         from psycopg.rows import dict_row
 
-        async with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        async with self._connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(sql, params)
             row = await cur.fetchone() if cur.description else None
             return row
@@ -99,8 +156,6 @@ class Database:
     # ------------------------------------------------------------------ #
 
     async def health(self) -> bool:
-        if not self.available:
-            return False
         try:
             await self._fetch("SELECT 1")
             return True

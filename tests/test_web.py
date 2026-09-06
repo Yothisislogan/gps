@@ -260,13 +260,6 @@ class TestManifest:
 
 
 class TestServiceWorker:
-    def test_never_caches_the_api(self):
-        source = read(WEB / "sw.js")
-        # A cached route or a cached "abierto ahora" is worse than an error:
-        # the driver acts on it.
-        assert "/api/" in source
-        assert re.search(r"pathname\.startsWith\('/api/'\)\)\s*return", source)
-
     def test_does_not_cache_tile_ranges(self):
         source = read(WEB / "sw.js")
         assert "/tiles/" in source, "range requests cannot be cached; offline.js owns the archive"

@@ -217,6 +217,29 @@ def client(app_and_db):
 
 
 class TestAuth:
+    def test_admin_pages_and_errors_are_never_cacheable(self, client):
+        for headers in ({}, AUTH):
+            response = client.get("/admin/", headers=headers)
+            assert response.headers["cache-control"] == "no-store"
+
+    def test_cross_site_form_cannot_change_moderation_state(self, client, app_and_db):
+        _, database = app_and_db
+        response = client.post(
+            "/admin/queue/1/decide",
+            data={"decision": "merge"},
+            headers={**AUTH, "Origin": "https://untrusted.example", "Sec-Fetch-Site": "cross-site"},
+        )
+        assert response.status_code == 403
+        assert not database.writes
+
+    def test_same_origin_moderation_still_works(self, client, app_and_db):
+        response = client.post(
+            "/admin/queue/1/decide",
+            data={"decision": "merge"},
+            headers={**AUTH, "Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
+        )
+        assert response.status_code == 200
+
     def test_pages_require_credentials(self, client):
         response = client.get("/admin")
         assert response.status_code == 401

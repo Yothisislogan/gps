@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import secrets
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
@@ -31,6 +32,7 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
+_FINGERPRINT_SALT = secrets.token_bytes(32)
 
 
 def get_settings_dep(request: Request) -> Settings:
@@ -78,17 +80,12 @@ def get_valhalla(request: Request) -> AsyncValhallaClient:
 def client_fingerprint(request: Request) -> str:
     """A stable, non-identifying key for one caller.
 
-    nginx sits in front, so the real address is in ``X-Forwarded-For``.  The
+    nginx replaces forwarded headers and uvicorn resolves the trusted peer. The
     value is hashed with a per-process salt before it is used or stored: rate
     limiting needs to tell callers apart, not to know who they are.
     """
-    forwarded = request.headers.get("x-forwarded-for", "")
-    address = (
-        forwarded.split(",")[0].strip()
-        if forwarded
-        else (request.client.host if request.client else "unknown")
-    )
-    return hashlib.sha256(f"nicanav:{address}".encode()).hexdigest()[:32]
+    address = request.client.host if request.client else "unknown"
+    return hashlib.sha256(_FINGERPRINT_SALT + address.encode()).hexdigest()[:32]
 
 
 class RateLimiter:

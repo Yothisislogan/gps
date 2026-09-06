@@ -8,7 +8,7 @@
  * (a `.pmtiles` archive is read with byte ranges, and a 206 cannot be cached).
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `nicanav-shell-${VERSION}`;
 const ASSET_CACHE = `nicanav-assets-${VERSION}`;
 
@@ -44,15 +44,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(SHELL_CACHE)
-      // Individually, not addAll: one 404 must not fail the whole install and
-      // leave the app with no offline shell at all.
-      .then((cache) =>
-        Promise.all(
-          SHELL.map((url) =>
-            cache.add(new Request(url, { cache: 'reload' })).catch(() => undefined),
-          ),
-        ),
-      )
+      // Keep the previous worker if this release cannot cache its full shell.
+      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -72,7 +65,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-/** Fonts, sprites and the style: immutable enough to serve from cache first. */
+/** Only public, explicitly owned assets belong in offline storage. */
 function isImmutableAsset(url) {
   return (
     url.pathname.startsWith('/fonts/') ||
@@ -88,12 +81,18 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Never cache the API. A stale route is a wrong turn.
-  if (url.pathname.startsWith('/api/')) return;
+  // Basic-auth pages must never survive logout or become visible offline.
+  // Bypass even existing caches; activation also removes the old broad cache.
+  if (request.headers.has('authorization') ||
+      /^\/(api|admin)(\/|$)/.test(url.pathname)) return;
 
   // Tiles are byte-range requests; the cache cannot hold their 206 responses,
   // and offline.js owns the whole-archive copy instead.
   if (url.pathname.startsWith('/tiles/')) return;
+
+  const navigation = request.mode === 'navigate' &&
+    (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/@'));
+  if (!navigation && !SHELL.includes(url.pathname) && !isImmutableAsset(url)) return;
 
   if (isImmutableAsset(url)) {
     event.respondWith(
@@ -101,9 +100,9 @@ self.addEventListener('fetch', (event) => {
         (hit) =>
           hit ||
           fetch(request).then((response) => {
-            if (response.ok) {
+            if (canCache(response)) {
               const copy = response.clone();
-              caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
+              event.waitUntil(caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy)).catch(() => {}));
             }
             return response;
           }),
@@ -115,33 +114,33 @@ self.addEventListener('fetch', (event) => {
   // The shell: network first with a short timeout, cache as the safety net.
   // A driver who has lost signal still gets the app; one who has not gets the
   // current version without a hard refresh.
-  event.respondWith(
-    Promise.race([
-      fetch(request).then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      }),
-      new Promise((resolve) => {
-        setTimeout(() => caches.match(request).then((hit) => hit && resolve(hit)), 3000);
-      }),
-    ]).catch(() =>
-      caches
-        .match(request)
-        .then((hit) => hit || caches.match('/index.html'))
-        .then(
-          (hit) =>
-            hit ||
-            new Response('Sin conexión', {
-              status: 503,
-              headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-            }),
-        ),
-    ),
-  );
+  const fallback = async () => (await caches.match(request)) ||
+    (navigation && await caches.match('/index.html')) ||
+    new Response('Sin conexión', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  const network = fetch(request).then(async (response) => {
+    if (canCache(response)) {
+      try {
+        const cache = await caches.open(SHELL_CACHE);
+        await cache.put(navigation ? '/index.html' : request, response.clone());
+      } catch { /* Quota/private mode must not turn an online response into an error. */ }
+    }
+    return response.status >= 500 ? fallback() : response;
+  }).catch(fallback);
+  event.waitUntil(network.then(() => undefined));
+  let timer;
+  event.respondWith(Promise.race([
+    network,
+    new Promise((resolve) => { timer = setTimeout(() => resolve(fallback()), 3000); }),
+  ]).finally(() => clearTimeout(timer)));
 });
+
+function canCache(response) {
+  return response.status === 200 && !response.redirected &&
+    !/no-store|private/i.test(response.headers.get('cache-control') || '');
+}
 
 // Lets a new version take over without waiting for every tab to close.
 self.addEventListener('message', (event) => {

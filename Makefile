@@ -13,7 +13,7 @@ PYTHON  := python3
 DATA    ?= data
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install test test-all lint format check up down restart logs ps \
+.PHONY: help venv install test test-all lint format check prepare up down restart logs ps \
         build web-config nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
         backup check-speeds verify verify-images clean-tmp
 
@@ -41,13 +41,20 @@ format:  ## Apply formatting and safe lint fixes
 	ruff format .
 
 check: lint test  ## Everything CI runs
+	node --test "tests/js/*.test.mjs"
+	$(PYTHON) scripts/build_style.py --check
+	$(PYTHON) scripts/build_sprites.py --check
+	$(PYTHON) scripts/validate_data.py
 
 # ------------------------------------------------------------------ the stack
 
 web-config:  ## Regenerate web/config.js from the environment
-	$(PYTHON) scripts/render_web_config.py
+	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/render_web_config.py
 
-up: web-config  ## Start the stack
+prepare:  ## Generate public config and nginx admin credentials
+	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/prepare_deploy.py
+
+up: prepare  ## Start the stack
 	$(COMPOSE) up -d
 
 down:  ## Stop the stack (data volumes survive)

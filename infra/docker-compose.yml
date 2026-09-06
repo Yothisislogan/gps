@@ -19,6 +19,7 @@ services:
       - "${NICANAV_HTTP_PORT:-8080}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./secrets:/etc/nginx/nicanav:ro
       - ../web:/srv/web:ro
       # Tiles are served straight off disk with byte-range requests. Read-only:
       # nginx must never be able to damage a published archive.
