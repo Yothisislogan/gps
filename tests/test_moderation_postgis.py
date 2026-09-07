@@ -35,6 +35,7 @@ def records():
     return [
         {
             "source": s,
+            "overture_license": "Apache-2.0" if s == "overture" else None,
             "source_id": str(i),
             "name": "Cafe",
             "category": "cafe",

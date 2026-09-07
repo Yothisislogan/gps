@@ -26,6 +26,12 @@ jobs:
       - name: Install
         run: pip install -r requirements/dev.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build required offline assets
+        run: npm ci --ignore-scripts && npm run build
+
       - name: Lint
         run: |
           ruff check .

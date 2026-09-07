@@ -285,6 +285,7 @@ class PoiRecord:
     status: str = "unverified"
     brand: str | None = None
     gers_id: str | None = None
+    license: str | None = None
     confidence: float = 0.0
     popularity: float = 0.0
 
@@ -318,6 +319,7 @@ class PoiRecord:
         values["source"] = str(values["source"])
         values["source_id"] = str(values["source_id"])
         values["name"] = str(values["name"] or "")
+        values["license"] = data.get("license") or data.get("overture_license")
         return cls(**values)
 
 
@@ -641,6 +643,7 @@ class MergedPoi:
     popularity: float = 0.0
     sources: dict[str, str] = field(default_factory=dict)
     source_keys: tuple[str, ...] = ()
+    source_licenses: dict[str, str] = field(default_factory=dict)
     field_sources: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -672,6 +675,7 @@ class MergedPoi:
             "popularity": round(self.popularity, 4),
             "sources": dict(self.sources),
             "source_keys": list(self.source_keys),
+            "source_licenses": dict(self.source_licenses),
             "field_sources": dict(self.field_sources),
         }
         return {
@@ -763,6 +767,7 @@ def merge_records(records: Sequence[PoiRecord]) -> MergedPoi:
         popularity=max((record.popularity for record in records), default=0.0),
         sources=sources,
         source_keys=tuple(sorted(record.key for record in records)),
+        source_licenses={record.key: record.license for record in records if record.license},
         field_sources=field_sources,
     )
 

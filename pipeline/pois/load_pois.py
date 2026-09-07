@@ -116,6 +116,7 @@ ON CONFLICT (source, source_id) DO UPDATE SET
     geom = EXCLUDED.geom,
     confidence = EXCLUDED.confidence,
     raw = EXCLUDED.raw,
+    license = EXCLUDED.license,
     fetched_at = now()
 """
 
@@ -214,9 +215,7 @@ def load(features: Iterable[dict[str, Any]], dsn: str, *, batch_size: int = 500)
                                 "category": properties.get("category"),
                                 "lat": params["lat"],
                                 "lon": params["lon"],
-                                "license": properties.get("overture_license")
-                                if source == "overture"
-                                else _LICENSES.get(source, "ODbL-1.0"),
+                                "license": _source_license(properties, source, source_id),
                                 "confidence": params["confidence"],
                                 "raw": json.dumps(properties, ensure_ascii=False),
                             },
@@ -249,6 +248,18 @@ def _merge_existing(cur, survivor, duplicate) -> None:
         (survivor, duplicate),
     )
     cur.execute("DELETE FROM poi WHERE id=%s", (duplicate,))
+
+
+def _source_license(properties, source, source_id):
+    explicit = (properties.get("source_licenses") or {}).get(f"{source}:{source_id}")
+    if source == "overture":
+        explicit = explicit or properties.get("overture_license")
+        if not explicit:
+            raise ValueError(
+                f"Missing Overture source license for {source_id}; re-extract source data"
+            )
+        return explicit
+    return explicit or _LICENSES[source]
 
 
 def _source_pairs(properties: dict[str, Any]) -> list[tuple[str, str]]:
