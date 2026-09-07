@@ -1,0 +1,50 @@
+# The nightly build: fresh OSM extract, tiles, routing graph, POI export,
+# search index, QA. Idempotent and atomic — a failed run leaves yesterday's
+# data serving rather than a half-built map.
+[Unit]
+Description=nicanav nightly build
+Documentation=file:/opt/nicanav/docs/RUNBOOK.md
+# Docker must be up, and must still be up: Requires, not just After, so a
+# docker restart during the build does not leave this hanging on a dead socket.
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=nicanav-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nicanav
+ExecStart=/opt/nicanav/pipeline/nightly.sh
+
+# A Nicaragua-sized build is ~35 min for the graph plus tiles on top. Four
+# hours is not an expectation, it is the line past which something is wedged
+# and killing it is better than letting it hold the pipeline lock all day.
+TimeoutStartSec=4h
+
+# This box serves the map while it builds. Losing ten minutes on the build is
+# invisible; losing the map for ten minutes is not.
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=50
+
+# MemoryPeak (systemd >= 256) is the only honest answer to "how much RAM does
+# the nightly need". Measuring the script's own RSS tells you nothing: the work
+# happens in containers and in a JVM the script only supervises.
+MemoryAccounting=yes
+IOAccounting=yes
+
+# Runs as root because it drives the Docker socket. Everything else is closed.
+User=root
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nicanav-nightly
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=nicanav golden-route check (12:00 Managua)
+
+[Timer]
+Unit=nicanav-golden.service
+OnCalendar=*-*-* 12:00:00 America/Managua
+Persistent=false
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

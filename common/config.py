@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     tiles_dir: Path = REPO_ROOT / "data" / "tiles"
 
     # --- public surface -------------------------------------------------- #
-    public_base_url: str = "http://localhost:8080"
+    public_base_url: str = "http://localhost:8400"
     tiles_base_url: str = "/tiles"
     cors_origins: str = "*"
     admin_user: str = "admin"

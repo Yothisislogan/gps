@@ -1,0 +1,21 @@
+# The golden routes again at midday, against the graph that has been serving
+# all morning — catches a bad build that the post-build check happened to pass.
+[Unit]
+Description=nicanav golden-route check
+Requires=docker.service
+After=docker.service
+OnFailure=nicanav-failure@%n.service
+
+[Service]
+# The --json path is inside the container. /data is the host's
+# NICANAV_DATA_DIR, so the result survives the run; anything else does not.
+Type=oneshot
+WorkingDirectory=/opt/nicanav
+ExecStart=/usr/bin/docker compose -f /opt/nicanav/infra/docker-compose.yml \
+    --env-file /opt/nicanav/infra/.env --profile tools \
+    run --rm pipeline python3 -m pipeline.qa.golden_routes \
+    --json /data/qa/golden-midday.json --baseline /data/qa/golden-nightly.json
+TimeoutStartSec=20min
+User=root
+NoNewPrivileges=yes
+SyslogIdentifier=nicanav-golden

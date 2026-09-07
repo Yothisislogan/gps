@@ -1,7 +1,8 @@
 # nicanav runbook
 
 Operating the stack on one box. Written for the person who is on call, which for
-a while is the person who wrote it.
+a while is the person who wrote it. [docs/SERVER.md](SERVER.md) is the companion:
+what runs where, which ports, which paths, and how to redeploy or roll back.
 
 The governing rule everywhere below: **stale beats wrong.** A day-old map is a
 minor annoyance; a half-built one sends drivers into a wall. Every job publishes

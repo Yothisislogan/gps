@@ -416,9 +416,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # A route the router could not compute at all is a broken stack, not a bad
     # guess: that fails whatever the case's source says.
     blocking = [
-        result
-        for result in mismatched
-        if result.error or result.case.binding or args.strict
+        result for result in mismatched if result.error or result.case.binding or args.strict
     ]
     blocking_ids = {id(result) for result in blocking}
     advisory = [result for result in mismatched if id(result) not in blocking_ids]
@@ -426,13 +424,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\n{len(results) - len(mismatched)}/{len(results)} matched expectations")
     if advisory:
         print(
-            f"{len(advisory)} of the mismatches are agent-sourced estimates and do not "
-            "fail the run"
+            f"{len(advisory)} of the mismatches are agent-sourced estimates and do not fail the run"
         )
     if not any(result.case.binding for result in results):
         print(
             "no driven routes in this file yet — nothing here is ground truth. "
-            "Drive one with a GPS logger, set its source to \"driven\", and this "
+            'Drive one with a GPS logger, set its source to "driven", and this '
             "suite starts asserting."
         )
 

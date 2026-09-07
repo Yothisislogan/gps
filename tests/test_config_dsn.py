@@ -36,10 +36,10 @@ class TestComposition:
     @pytest.mark.parametrize(
         "password",
         [
-            "abc/def",            # base64 emits this, and it truncates the URL
+            "abc/def",  # base64 emits this, and it truncates the URL
             "abc+def",
             "abc=def==",
-            "p@ssw0rd",           # an @ starts a new authority section
+            "p@ssw0rd",  # an @ starts a new authority section
             "with?query#frag",
             "sp ace",
             "back\\slash",

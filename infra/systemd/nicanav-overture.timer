@@ -1,0 +1,13 @@
+[Unit]
+Description=nicanav monthly Overture refresh (5th, 03:30 Managua)
+
+[Timer]
+Unit=nicanav-overture.service
+# The 5th, not the 1st: the release lands mid-month and this gives the previous
+# one time to be complete on every mirror.
+OnCalendar=*-*-05 03:30:00 America/Managua
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

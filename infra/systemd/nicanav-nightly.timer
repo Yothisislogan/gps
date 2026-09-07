@@ -1,0 +1,23 @@
+[Unit]
+Description=nicanav nightly build (02:15 Managua)
+Documentation=file:/opt/nicanav/docs/RUNBOOK.md
+
+[Timer]
+Unit=nicanav-nightly.service
+
+# The timezone suffix needs systemd >= 252 (Ubuntu 24.04 ships 255). On older
+# systemd drop the suffix and write the UTC time instead — Nicaragua is UTC-6
+# year round, no daylight saving, so 02:15 Managua is 08:15 UTC.
+OnCalendar=*-*-* 02:15:00 America/Managua
+
+# A box that was down at 02:15 still needs today's map. Without this the run is
+# simply skipped and nobody notices until the data is a week old.
+Persistent=true
+
+# Geofabrik publishes to everyone at once. Fifteen minutes of jitter keeps this
+# box out of the thundering herd.
+RandomizedDelaySec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

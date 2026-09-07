@@ -1,0 +1,194 @@
+# nicanav — host nginx site, in front of the stack's own nginx container.
+#
+#   cp infra/nginx-site.conf.example /etc/nginx/sites-available/mapa.example.ni
+#   ln -s /etc/nginx/sites-available/mapa.example.ni /etc/nginx/sites-enabled/
+#   # replace mapa.example.ni throughout, then:
+#   nginx -t && systemctl reload nginx
+#   certbot --nginx -d mapa.example.ni
+#
+# This file is an example, not a deployed config. Nothing here is installed by
+# the compose stack.
+#
+# Topology:
+#
+#   internet ──► host nginx (:443, TLS) ──► 127.0.0.1:8400 ──► container nginx
+#                                                              ├─ /srv/web    (PWA)
+#                                                              ├─ /srv/tiles  (PMTiles)
+#                                                              └─ api:8000
+#
+# The container publishes on 127.0.0.1 only. Docker writes its own iptables
+# rules and bypasses UFW entirely, so a container bound to 0.0.0.0 is on the
+# public internet no matter what UFW says. Keep the loopback bind; this file is
+# the only thing that should ever face outward.
+
+# ---------------------------------------------------------------------------
+# :80 — ACME plus redirect. certbot rewrites this block; keep it minimal.
+# ---------------------------------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name mapa.example.ni;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+
+# ---------------------------------------------------------------------------
+# :443
+# ---------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name mapa.example.ni;
+
+    # HTTP/2 spelling is version dependent and getting it wrong fails nginx -t,
+    # which on a reload means the site stays down:
+    #   nginx >= 1.25.1   http2 on;                 (a directive of its own)
+    #   nginx <  1.25.1   listen 443 ssl http2;     (a listen parameter)
+    # Ubuntu 24.04 ships 1.24.0, so neither `http2 on;` nor this file's plain
+    # `listen 443 ssl;` gives you HTTP/2 — check `nginx -v` and add the right
+    # one. It buys little here anyway: the map is one PMTiles archive read by
+    # range, not a hundred small tile requests to multiplex.
+
+    # certbot fills these in. Until it has run, comment out this whole block or
+    # nginx -t fails on the missing files.
+    ssl_certificate     /etc/letsencrypt/live/mapa.example.ni/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mapa.example.ni/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Nicaraguan mobile data is slow and expensive; a redirect chain costs a
+    # whole RTT. Ask for a year only once the certificate renewal is proven.
+    # add_header Strict-Transport-Security "max-age=31536000" always;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    client_max_body_size 8m;
+
+    # Report photos and GPX uploads arrive over 3G.
+    client_body_timeout 120s;
+
+    access_log /var/log/nginx/nicanav.access.log;
+    error_log  /var/log/nginx/nicanav.error.log warn;
+
+    # -----------------------------------------------------------------------
+    # PMTiles
+    # -----------------------------------------------------------------------
+    # PMTiles is one large archive read by HTTP byte range. Anything that
+    # rewrites the body destroys that, and the failure surfaces in the browser
+    # as a pmtiles.js error about content-length — which reads like a client
+    # bug and is not.
+    location /tiles/ {
+        proxy_pass http://127.0.0.1:8400;
+
+        # 1. Never compress. gzip on a range response makes nginx drop the
+        #    Range header, answer 200 with the whole archive, chunked, with no
+        #    Content-Length. `gzip off` here, and the upstream sets it too.
+        gzip off;
+
+        # 2. Never buffer. A 400 MB archive buffered to a temp file to satisfy
+        #    a 16 KB range read is a disk write per tile fetch.
+        proxy_buffering off;
+        proxy_max_temp_file_size 0;
+
+        # 3. Range and If-Match reach the upstream by default (nginx forwards
+        #    unknown client headers), but Accept-Encoding is cleared so no hop
+        #    is tempted to negotiate compression on the way back.
+        proxy_set_header Accept-Encoding "";
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+
+        # 4. CORS lives here, not in both layers. Two identical
+        #    Access-Control-Allow-Origin headers is not permissive, it is a
+        #    hard CORS failure in every browser ("contains multiple values"),
+        #    so the upstream's copies are hidden and re-stated once.
+        #
+        #    Content-Range must be exposed or a range read is unusable from
+        #    script. ETag must be exposed and must stay strong: pmtiles.js
+        #    detects a rebuilt archive by comparing ETags and discards weak
+        #    ones, and a client that cannot tell two builds apart will stitch
+        #    tiles from both.
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Access-Control-Allow-Methods;
+        proxy_hide_header Access-Control-Allow-Headers;
+        proxy_hide_header Access-Control-Expose-Headers;
+        add_header Access-Control-Allow-Origin   "*" always;
+        add_header Access-Control-Allow-Methods  "GET, HEAD, OPTIONS" always;
+        add_header Access-Control-Allow-Headers  "Range, If-Match" always;
+        add_header Access-Control-Expose-Headers "ETag, Content-Length, Content-Range, Accept-Ranges" always;
+        add_header Access-Control-Max-Age 86400 always;
+        add_header X-Content-Type-Options nosniff always;
+
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+    }
+
+    # -----------------------------------------------------------------------
+    # API
+    # -----------------------------------------------------------------------
+    location /api/ {
+        proxy_pass http://127.0.0.1:8400;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+
+        # $remote_addr, NOT $proxy_add_x_forwarded_for. This is the only hop
+        # that knows who the client is; appending would let a client send its
+        # own X-Forwarded-For and land first in the list, which is the entry
+        # api/deps.py reads for per-client rate limiting. Replacing it makes
+        # the value unspoofable. The container nginx appends after us, so the
+        # API still sees the real client first.
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # A long route across the country is still a sub-second query; 60s is
+        # for a cold Valhalla or a locked table, not for normal traffic.
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    60s;
+    }
+
+    # -----------------------------------------------------------------------
+    # Moderation UI
+    # -----------------------------------------------------------------------
+    # The container already requires basic auth on /admin. This is the second
+    # lock: without it, the admin UI is one leaked password away from the open
+    # internet. Uncomment and set your own ranges.
+    location /admin {
+        # allow 203.0.113.4;      # office
+        # allow 10.8.0.0/24;      # vpn
+        # deny  all;
+        proxy_pass http://127.0.0.1:8400;
+        proxy_http_version 1.1;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Real-IP       $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+
+    # -----------------------------------------------------------------------
+    # The PWA
+    # -----------------------------------------------------------------------
+    # The container sets the cache policy per asset (sw.js no-store, config.js
+    # no-cache, fonts immutable). Do not add Cache-Control here: an add_header
+    # at this level applies to every response in the location and would pin the
+    # service worker, which is how a broken release becomes unfixable remotely.
+    location / {
+        proxy_pass http://127.0.0.1:8400;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /healthz {
+        access_log off;
+        proxy_pass http://127.0.0.1:8400;
+    }
+}

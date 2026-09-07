@@ -127,6 +127,7 @@ everyone gets them, not in a private table here.
 - [docs/PLAN.md](docs/PLAN.md) — the whole plan and the reasoning behind every choice
 - [docs/SPEC.md](docs/SPEC.md) — the normative interface contract
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) — operating it, and the first-deploy checklist
+- [docs/SERVER.md](docs/SERVER.md) — what runs where on the box: ports, paths, timers, rollback
 - [docs/LICENSES.md](docs/LICENSES.md) — attribution and the rules
 
 ## Licence
