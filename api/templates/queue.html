@@ -7,7 +7,7 @@
   Puntaje entre 0.60 y 0.85: el conflador no pudo decidir. Dos gasolineras de la
   misma marca a 60 m en lados opuestos de la carretera son dos lugares
   distintos; el mismo restaurante escrito de dos maneras es uno solo.
-  Las decisiones se guardan para su aplicación posterior; todavía no modifican el mapa.
+  Las decisiones se guardan para su aplicación posterior; se publican al completar una actualización de lugares.
 </p>
 <table>
   <thead>
@@ -27,10 +27,15 @@
       </td>
       <td>{% if pair.distance_m is not none %}{{ '%.0f'|format(pair.distance_m) }} m{% else %}—{% endif %}</td>
       <td class="actions">
+        {% if pair.decision and pair.decision != 'pending' %}
+        {{ 'Unir' if pair.decision == 'merge' else 'Separar' }} —
+        {% if pair.published_at %}Publicado: {{ pair.published_at }}{% else %}Guardado; pendiente de publicación{% endif %}
+        {% else %}
         <button hx-post="/admin/queue/{{ pair.id }}/decide" hx-vals='{"decision": "merge"}'
                 hx-target="#pair-{{ pair.id }}" hx-swap="outerHTML">Unir</button>
         <button hx-post="/admin/queue/{{ pair.id }}/decide" hx-vals='{"decision": "separate"}'
                 hx-target="#pair-{{ pair.id }}" hx-swap="outerHTML">Separar</button>
+        {% endif %}
       </td>
     </tr>
   {% else %}

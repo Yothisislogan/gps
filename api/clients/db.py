@@ -163,9 +163,14 @@ class Database:
             return False
 
     async def get_poi(self, poi_id: str) -> PoiCard | None:
-        rows = await self._fetch(f"SELECT {_POI_COLUMNS} FROM poi p WHERE p.id = %s", (poi_id,))
+        rows = await self._fetch(
+            f"SELECT {_POI_COLUMNS} FROM poi p WHERE p.id = "
+            "COALESCE((SELECT poi_id FROM poi_redirect WHERE old_id=%s), %s::uuid)",
+            (poi_id, poi_id),
+        )
         if not rows:
             return None
+        poi_id = rows[0]["id"]
         photos = await self._fetch(
             "SELECT url, credit, license, taken_at FROM poi_photo WHERE poi_id = %s ORDER BY id",
             (poi_id,),

@@ -59,11 +59,13 @@ RETURNING id
 #: Find the existing row for a merged POI by any of its source ids.  A GERS id
 #: is the strongest key (it survives Overture releases); an OSM id is next.
 _FIND_EXISTING = """
-SELECT id, verified_at
-FROM poi
-WHERE (%(gers_id)s::text IS NOT NULL AND sources ->> 'overture_gers_id' = %(gers_id)s)
-   OR (%(osm_id)s::text  IS NOT NULL AND sources ->> 'osm_id' = %(osm_id)s)
-LIMIT 1
+SELECT p.id, p.verified_at FROM poi p
+WHERE p.id IN (SELECT poi_id FROM poi_source WHERE source || ':' || source_id = ANY(%(source_keys)s))
+   OR (NOT EXISTS (SELECT 1 FROM poi_source WHERE source || ':' || source_id = ANY(%(source_keys)s))
+       AND ((%(gers_id)s::text IS NOT NULL AND p.sources ->> 'overture_gers_id' = %(gers_id)s)
+         OR (%(osm_id)s::text IS NOT NULL AND p.sources ->> 'osm_id' = %(osm_id)s)))
+ORDER BY p.verified_at DESC NULLS LAST, p.id
+FOR UPDATE OF p
 """
 
 #: Fields an automated import may refresh.  Position, name and category are
@@ -159,7 +161,8 @@ def load(features: Iterable[dict[str, Any]], dsn: str, *, batch_size: int = 500)
 
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
-            pending = 0
+            cur.execute("SELECT pg_advisory_xact_lock(73401923)")
+            claimed = set()
             for feature in features:
                 properties = dict(feature.get("properties") or {})
                 geometry = feature.get("geometry") or {}
@@ -171,8 +174,17 @@ def load(features: Iterable[dict[str, Any]], dsn: str, *, batch_size: int = 500)
                     continue
 
                 params = _params(properties)
+                params["source_keys"] = [
+                    f"{source}:{sid}" for source, sid in _source_pairs(properties)
+                ]
                 cur.execute(_FIND_EXISTING, params)
-                existing = cur.fetchone()
+                # One old POI can split into several new clusters. Only the first
+                # cluster keeps its UUID; later clusters get new identities.
+                candidates = [row for row in cur.fetchall() if row[0] not in claimed]
+                existing = candidates[0] if candidates else None
+                if existing:
+                    for duplicate, _ in candidates[1:]:
+                        _merge_existing(cur, existing[0], duplicate)
 
                 if existing is None:
                     cur.execute(_UPSERT_POI, params)
@@ -190,6 +202,7 @@ def load(features: Iterable[dict[str, Any]], dsn: str, *, batch_size: int = 500)
                         stats["kept_verified"] += 1
 
                 if poi_id is not None:
+                    claimed.add(poi_id)
                     for source, source_id in _source_pairs(properties):
                         cur.execute(
                             _UPSERT_SOURCE,
@@ -210,16 +223,45 @@ def load(features: Iterable[dict[str, Any]], dsn: str, *, batch_size: int = 500)
                         )
                         stats["sources"] += 1
 
-                pending += 1
-                if pending >= batch_size:
-                    conn.commit()
-                    pending = 0
+        # One transaction: source reassignment and duplicate removal cannot
+        # partially commit if a later cluster fails.
         conn.commit()
     return stats
 
 
+def _merge_existing(cur, survivor, duplicate) -> None:
+    """Keep old links and every related record before removing a duplicate."""
+    cur.execute(
+        "INSERT INTO poi_redirect (old_id,poi_id,snapshot) "
+        "SELECT id,%s,to_jsonb(p) FROM poi p WHERE id=%s "
+        "ON CONFLICT (old_id) DO UPDATE SET poi_id=EXCLUDED.poi_id",
+        (survivor, duplicate),
+    )
+    cur.execute("UPDATE poi_redirect SET poi_id=%s WHERE poi_id=%s", (survivor, duplicate))
+    for table in ("poi_source", "poi_photo", "poi_flag", "alias", "poi_suggestion"):
+        cur.execute(f"UPDATE {table} SET poi_id=%s WHERE poi_id=%s", (survivor, duplicate))
+    cur.execute(
+        "UPDATE poi p SET sources=d.sources || p.sources, "
+        "phone=COALESCE(p.phone,d.phone),whatsapp=COALESCE(p.whatsapp,d.whatsapp),"
+        "website=COALESCE(p.website,d.website),facebook=COALESCE(p.facebook,d.facebook),"
+        "instagram=COALESCE(p.instagram,d.instagram),opening_hours=COALESCE(p.opening_hours,d.opening_hours) "
+        "FROM poi d WHERE p.id=%s AND d.id=%s",
+        (survivor, duplicate),
+    )
+    cur.execute("DELETE FROM poi WHERE id=%s", (duplicate,))
+
+
 def _source_pairs(properties: dict[str, Any]) -> list[tuple[str, str]]:
     """Every (source, source_id) the merged row came from."""
+    keys = properties.get("source_keys")
+    if keys:
+        pairs = []
+        for key in keys:
+            source, source_id = key.split(":", 1)
+            if source not in _LICENSES or not source_id:
+                raise ValueError(f"Invalid source key: {key}")
+            pairs.append((source, source_id))
+        return sorted(set(pairs))
     sources = properties.get("sources") or {}
     if isinstance(sources, str):
         sources = json.loads(sources)

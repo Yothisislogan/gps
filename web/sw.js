@@ -8,7 +8,7 @@
  * (a `.pmtiles` archive is read with byte ranges, and a 206 cannot be cached).
  */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `nicanav-shell-${VERSION}`;
 const ASSET_CACHE = `nicanav-assets-${VERSION}`;
 
@@ -20,6 +20,16 @@ const SHELL = [
   // the repository — but it must be cached, or an offline start has no API URL.
   '/config.js',
   '/css/app.css',
+  '/vendor/v1/maplibre-gl.mjs',
+  '/vendor/v1/maplibre-gl-shared.mjs',
+  '/vendor/v1/maplibre-gl-worker.mjs',
+  '/vendor/v1/maplibre-gl.css',
+  '/vendor/v1/pmtiles.js',
+  '/vendor/v1/opening-hours.mjs',
+  '/vendor/v1/noto-regular.woff2',
+  '/vendor/v1/noto-bold.woff2',
+  '/vendor/v1/noto-italic.woff2',
+
   '/js/api.js',
   '/js/config.js',
   '/js/map.js',
@@ -33,10 +43,13 @@ const SHELL = [
   '/js/navmath.js',
   '/js/voice.js',
   '/js/offline.js',
+  '/js/offline-style.js',
   '/style/nicanav.json',
   '/style/nicanav-night.json',
   '/sprites/nicanav.json',
   '/sprites/nicanav.png',
+  '/sprites/nicanav@2x.json',
+  '/sprites/nicanav@2x.png',
   '/manifest.webmanifest',
 ];
 

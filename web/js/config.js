@@ -42,13 +42,10 @@ const DEFAULTS = {
   //: MapLibre GL JS v6 is ESM-only — there is no UMD build to <script> in, so
   //: it is imported dynamically and the URL stays overridable for self-hosting.
   //: Keep the <link rel="modulepreload"> in index.html pointing at the same URL.
-  maplibreUrl: 'https://unpkg.com/maplibre-gl@6.7.0/dist/maplibre-gl.mjs',
+  maplibreUrl: '/vendor/v1/maplibre-gl.mjs',
 
-  //: opening_hours.js is loaded only when a card actually carries an
-  //: `opening_hours` string.  jsDelivr's `+esm` endpoint inlines the package's
-  //: i18next/suncalc dependencies, which a bare ESM entry would leave as
-  //: unresolvable bare specifiers.
-  openingHoursUrl: 'https://cdn.jsdelivr.net/npm/opening_hours@3.14.0/+esm',
+  //: The local hours bundle includes its dependencies and is precached.
+  openingHoursUrl: '/vendor/v1/opening-hours.mjs',
 
   searchDebounceMs: 150,
   maxRecentSearches: 8,

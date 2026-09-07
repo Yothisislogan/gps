@@ -12,6 +12,8 @@ require_free_space 2048
 py() { (cd "$REPO_ROOT" && python3 "$@"); }
 ALREADY_APPLIED="$(py -m pipeline.status "$METADATA_DIR" "$SCRIPT_NAME" check)"
 start_run
+step "snapshot decisions" py -m pipeline.pois.review snapshot
+PENDING_DECISIONS="$(py -m pipeline.pois.review pending)"
 CURRENT_STAGE="fetch overture"
 record_status running --stage "$CURRENT_STAGE"
 FETCH_ARGS=(--skip-unchanged --metadata "$METADATA_DIR/overture.json")
@@ -19,7 +21,7 @@ FETCH_ARGS=(--skip-unchanged --metadata "$METADATA_DIR/overture.json")
 FETCH_CODE=0
 py -m pipeline.pois.fetch_overture "${FETCH_ARGS[@]}" || FETCH_CODE=$?
 if [ "$FETCH_CODE" -eq 3 ]; then
-  if [ "$ALREADY_APPLIED" = yes ]; then
+  if [ "$ALREADY_APPLIED" = yes ] && [ "$PENDING_DECISIONS" != yes ]; then
     record_status unchanged --stage "release unchanged"
     log "no new Overture release; previous refresh completed"
     exit 0
@@ -29,13 +31,15 @@ elif [ "$FETCH_CODE" -ne 0 ]; then
   exit "$FETCH_CODE"
 fi
 
-CONFLATE_ARGS=(--input "${EXPORT_DIR}/src_osm.geojsonseq" --input "${EXPORT_DIR}/src_overture.geojsonseq")
+CONFLATE_ARGS=(--decisions "${EXPORT_DIR}/decisions.json" --input "${EXPORT_DIR}/src_osm.geojsonseq" --input "${EXPORT_DIR}/src_overture.geojsonseq")
 [ -s "${EXPORT_DIR}/src_survey.geojsonseq" ] && CONFLATE_ARGS+=(--input "${EXPORT_DIR}/src_survey.geojsonseq")
 step "conflate pois" py -m pipeline.pois.conflate "${CONFLATE_ARGS[@]}" \
   --output "${EXPORT_DIR}/pois_merged.geojsonseq" --queue "${EXPORT_DIR}/review_queue.json"
+step "enqueue review" py -m pipeline.pois.review enqueue
 step "load pois" py -m pipeline.pois.load_pois
 step "export pois" py -m pipeline.pois.export_geojson
 step "build poi tiles" "${REPO_ROOT}/pipeline/build_tiles.sh" --pois-only
 step "reindex search" py -m pipeline.search.build_index
+step "publish decisions" py -m pipeline.pois.review published
 record_status succeeded --stage "complete"
 log "done"

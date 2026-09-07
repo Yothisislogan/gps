@@ -29,10 +29,10 @@
   no-bundler page needs: the ESM entry leaves a bare `fflate` import that a
   browser cannot resolve. It must load before any module constructs a Map.
 -->
-<script src="https://cdn.jsdelivr.net/npm/pmtiles@4.5.0/dist/pmtiles.js"></script>
+<script src="/vendor/v1/pmtiles.js"></script>
 <!-- MapLibre v6 is ESM-only and is imported dynamically by map.js. -->
-<link rel="modulepreload" href="https://unpkg.com/maplibre-gl@6.7.0/dist/maplibre-gl.mjs">
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.7.0/dist/maplibre-gl.css">
+<link rel="modulepreload" href="/vendor/v1/maplibre-gl.mjs">
+<link rel="stylesheet" href="/vendor/v1/maplibre-gl.css">
 </head>
 
 <body>

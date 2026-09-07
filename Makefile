@@ -15,7 +15,7 @@ DATA    ?= data
 .DEFAULT_GOAL := help
 .PHONY: help venv install test test-all lint format check prepare up down restart logs ps \
         build web-config nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
-        backup check-speeds verify verify-images clean-tmp
+        backup check-speeds verify verify-images clean-tmp vendor
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -42,6 +42,7 @@ format:  ## Apply formatting and safe lint fixes
 
 check: lint test  ## Everything CI runs
 	node --test "tests/js/*.test.mjs"
+	node scripts/check_offline_assets.mjs
 	$(PYTHON) scripts/build_style.py --check
 	$(PYTHON) scripts/build_sprites.py --check
 	$(PYTHON) scripts/validate_data.py
@@ -51,7 +52,11 @@ check: lint test  ## Everything CI runs
 web-config:  ## Regenerate web/config.js from the environment
 	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/render_web_config.py
 
-prepare:  ## Generate public config and nginx admin credentials
+vendor:  ## Build locked browser dependencies for local/offline startup
+	npm ci --ignore-scripts
+	npm run build
+
+prepare: vendor  ## Generate public config and nginx admin credentials
 	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/prepare_deploy.py
 
 up: prepare  ## Start the stack

@@ -20,6 +20,10 @@
 
 import { CONFIG } from './config.js';
 import { pmtilesProtocol } from './map.js';
+import { offlineStyle } from './offline-style.js';
+
+const onlineStyles = new WeakMap();
+export function rememberOnlineStyle(map, style) { onlineStyles.set(map, style); }
 
 const CACHE_NAME = 'nicanav-offline-v1';
 /** The key MapLibre styles use for the offline archive. */
@@ -132,6 +136,12 @@ export async function downloadCircle(onProgress, signal) {
   }
 
   const blob = new Blob(chunks, { type: 'application/octet-stream' });
+  // A captive portal can return HTTP 200 HTML. Validate before replacing the
+  // previous download, so "downloaded" means a readable PMTiles header.
+  const pmtiles = window.pmtiles;
+  if (!pmtiles) throw new Error('El lector del mapa no está disponible');
+  await new pmtiles.PMTiles(new CachedArchiveSource(blob, 'nicanav-download-check')).getHeader();
+  if (total && received !== total) throw new Error('La descarga del mapa está incompleta');
   await cache.put(
     url,
     new Response(blob, {
@@ -194,11 +204,17 @@ export async function activateOffline() {
 export function useOfflineSource(map, useOffline) {
   if (!map || typeof map.getStyle !== 'function') return;
   const style = map.getStyle();
-  if (!style || !style.sources || !style.sources.base) return;
-  const next = useOffline ? `pmtiles://${OFFLINE_URL}` : `pmtiles://${CONFIG.tilesBase}/base.pmtiles`;
-  if (style.sources.base.url === next) return;
-  style.sources.base.url = next;
-  map.setStyle(style, { diff: true });
+  if (!style || !style.sources) return;
+  if (useOffline) {
+    if (style.sources.base?.url === `pmtiles://${OFFLINE_URL}`) return;
+    onlineStyles.set(map, structuredClone(style));
+    map.setStyle(offlineStyle(style, true), { diff: true });
+  } else if (onlineStyles.has(map)) {
+    const original = onlineStyles.get(map);
+    onlineStyles.delete(map);
+    map.setStyle(original, { diff: true });
+  }
+
 }
 
 /**
@@ -210,7 +226,7 @@ export function useOfflineSource(map, useOffline) {
 export function autoSwitchOnConnectivity(map) {
   const update = async () => {
     const status = await offlineStatus();
-    if (!status.present) return;
+    if (!navigator.onLine && !status.present) return;
     if (!navigator.onLine) {
       await activateOffline();
       useOfflineSource(map, true);

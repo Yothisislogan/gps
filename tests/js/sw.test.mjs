@@ -83,3 +83,13 @@ test('navigating to pins does not create an unbounded history of cached location
   await sw.get('/@12.3,-86.4,16z', { mode: 'navigate' }).response;
   assert.deepEqual([...sw.entries.keys()], [`${origin}/index.html`]);
 });
+
+test('a fresh worker can serve renderer, worker, fonts and hours parser without the HTTP cache', async () => {
+  const sw = worker();
+  for (const path of ['/vendor/v1/maplibre-gl.mjs', '/vendor/v1/maplibre-gl-shared.mjs',
+    '/vendor/v1/maplibre-gl-worker.mjs', '/vendor/v1/pmtiles.js', '/vendor/v1/opening-hours.mjs',
+    '/vendor/v1/noto-regular.woff2', '/sprites/nicanav@2x.png']) {
+    sw.cache(path, 'installed asset', 'application/octet-stream');
+    assert.equal(await (await sw.get(path).response).text(), 'installed asset', path);
+  }
+});

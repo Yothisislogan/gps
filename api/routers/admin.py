@@ -135,7 +135,7 @@ _LATEST_KPIS = "SELECT taken_at, metrics FROM kpi_snapshot ORDER BY taken_at DES
 
 _MATCH_QUEUE = """
 SELECT q.id, q.left_key, q.right_key, q.score, q.name_score, q.distance_m, q.category_ok,
-       q.created_at,
+       q.created_at, q.decision, q.published_at,
        l.name AS left_name, l.category AS left_category, l.source AS left_source,
        ST_Y(l.geom) AS left_lat, ST_X(l.geom) AS left_lon,
        r.name AS right_name, r.category AS right_category, r.source AS right_source,
@@ -143,8 +143,7 @@ SELECT q.id, q.left_key, q.right_key, q.score, q.name_score, q.distance_m, q.cat
 FROM poi_match_queue q
 LEFT JOIN poi_source l ON l.source || ':' || l.source_id = q.left_key
 LEFT JOIN poi_source r ON r.source || ':' || r.source_id = q.right_key
-WHERE q.decision = 'pending'
-ORDER BY q.score DESC
+ORDER BY (q.decision = 'pending') DESC, q.decided_at DESC NULLS LAST, q.score DESC
 LIMIT %s OFFSET %s
 """
 
@@ -384,8 +383,8 @@ async def decide_pair(
         database,
         """
         UPDATE poi_match_queue
-        SET decision = %s, decided_by = %s, decided_at = now()
-        WHERE id = %s RETURNING id
+        SET decision = %s, decided_by = %s, decided_at = now(), published_at = NULL
+        WHERE id = %s AND decision = 'pending' RETURNING id
         """,
         (decision, user, pair_id),
     )
@@ -393,7 +392,7 @@ async def decide_pair(
     return HTMLResponse(
         f'<tr class="decided"><td colspan="5">Decisión guardada: {label} por {user}. Pendiente de aplicar al mapa.</td></tr>'
         if ok
-        else '<tr class="failed"><td colspan="5">No se pudo guardar</td></tr>'
+        else '<tr class="failed"><td colspan="5">No se pudo guardar: recargá la cola; la decisión puede estar guardada.</td></tr>'
     )
 
 
@@ -503,7 +502,7 @@ async def decide_alias(
     return HTMLResponse(
         f'<tr class="decided"><td colspan="4">{word}</td></tr>'
         if ok
-        else '<tr class="failed"><td colspan="4">No se pudo guardar</td></tr>'
+        else '<tr class="failed"><td colspan="4">No se pudo guardar: recargá la cola; la decisión puede estar guardada.</td></tr>'
     )
 
 

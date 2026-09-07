@@ -47,8 +47,11 @@ jobs:
         with:
           node-version: "22"
 
-      # node --test only; the app itself has no build step and no npm
-      # dependencies, deliberately (docs/PLAN.md section 6.1).
+      - name: Build local browser dependencies
+        run: npm ci --ignore-scripts && npm run build
+
+      - name: Verify offline dependency graph
+        run: node scripts/check_offline_assets.mjs
       - name: Test
         run: node --test "tests/js/*.test.mjs"
 
@@ -95,3 +98,28 @@ jobs:
       # cannot drift from how the code actually reads it. Missing data fails.
       - name: Validate
         run: python3 scripts/validate_data.py
+
+  moderation:
+    name: correction publication with PostGIS
+    runs-on: ubuntu-latest
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: nicanav_test
+          POSTGRES_USER: nicanav
+          POSTGRES_PASSWORD: test-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nicanav -d nicanav_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements/dev.txt
+      - name: Test real correction transactions
+        env:
+          NICANAV_TEST_DSN: postgresql://nicanav:test-only-password@localhost:5432/nicanav_test
+        run: pytest -q -m docker tests/test_moderation_postgis.py

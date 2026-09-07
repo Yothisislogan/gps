@@ -132,3 +132,58 @@ can remain `running`; the dashboard describes that as running or interrupted.
 After a failure, fix the named stage and rerun the job; Overture retries downstream
 publication even when its cached source is unchanged. QA is still post-publication,
 so investigate and roll back affected services/artifacts if those checks fail.
+
+## Third implementation: corrections and offline startup
+
+Saved pair decisions now enter conflation through a database snapshot. Explicit
+merges apply outside automatic matching distance; separate decisions block direct
+and transitive automatic merges. Conflicting human decisions stop publication.
+New review candidates are loaded into the queue without replacing human decisions.
+
+The POI loader reconciles all source identities in one transaction, preserves a
+verified survivor, transfers photos/flags/aliases/suggestions, and keeps old UUID
+links through `poi_redirect`. Duplicate row snapshots are retained for audit. A
+split retains the original UUID and attached local edits on the first deterministic
+cluster; other source clusters receive new UUIDs. Saved pair decisions are final
+in the current UI; changing one requires deliberate administrative reconciliation.
+
+The queue distinguishes pending review, saved decisions and published decisions.
+Publication timestamps are written only after POI tiles and search have rebuilt,
+for decisions in the captured snapshot whose resulting identities appear in the
+export. Missing/closed source records stay awaiting publication. Database export
+failures stop the pipeline rather than silently exporting unmoderated raw data;
+`--allow-fallback` is an explicit offline/demo escape hatch and is not used by jobs.
+This remains sequential publication, not a cross-service atomic release.
+
+Browser dependencies now have exact npm versions and a lockfile. `make vendor`
+builds the local renderer, shared module, worker, PMTiles decoder, hours parser,
+fonts and license notices. The service worker precaches these and both requested
+sprite densities. Fonts no longer depend on previously viewed glyph ranges. nginx
+serves `.mjs` with the JavaScript MIME type. A first offline map initializes with
+the cached archive before waiting for map load, omits unavailable POI tiles, and
+restores online sources on reconnection. Without a downloaded archive the shell
+can open, but no map coverage is promised. Downloaded archives are validated before
+replacing the last saved copy. Settings explain that searches, closure checks and
+new routes still require connectivity.
+
+### Deployment requirements
+
+1. Apply `db/migrations/003_moderation_publication.sql` to existing databases before
+   deploying the API and pipeline changes. It adds publication evidence and stable
+   redirects. Fresh databases receive it through the existing migration mount.
+2. Install Node.js 22+ on the deployment/build host. Run `make vendor` (or
+   `npm ci --ignore-scripts && npm run build`); `make prepare`/`make up` include this.
+   Distribute generated `web/vendor/v1` and `web/sprites/nicanav@2x.*` with the web
+   directory. These reproducible outputs are not committed.
+3. Rebuild/recreate API and pipeline services, reload nginx for `.mjs`, and run a
+   refresh. Monitor saved-to-published decisions in the admin queue.
+4. Open the app online once and allow service-worker installation to finish;
+   download the desired map before disconnecting. Storage eviction/private mode
+   can remove offline content. Custom external configuration overrides must supply
+   their own offline dependencies.
+
+`make check` verifies the complete local dependency graph after `make vendor` and
+runs shell/JavaScript/algorithm regressions. CI also runs real PostGIS tests for
+merge preservation, stable redirects, repeat imports, separation and transaction
+rollback. Device GPU rendering, storage eviction and actual road travel still need
+phone testing; this does not claim offline search or offline route calculation.

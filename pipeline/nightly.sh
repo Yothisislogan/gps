@@ -60,12 +60,16 @@ if [ "$SKIP_POIS" -eq 0 ]; then
   [ -s "$OVERTURE_SRC" ] && CONFLATE_ARGS+=(--input "$OVERTURE_SRC")
   [ -s "${EXPORT_DIR}/src_survey.geojsonseq" ] && CONFLATE_ARGS+=(--input "${EXPORT_DIR}/src_survey.geojsonseq")
 
+  step "snapshot decisions" py -m pipeline.pois.review snapshot
+  CONFLATE_ARGS+=(--decisions "${EXPORT_DIR}/decisions.json")
   step "conflate pois"    py -m pipeline.pois.conflate                             "${CONFLATE_ARGS[@]}"                             --output "${EXPORT_DIR}/pois_merged.geojsonseq"                             --queue "${EXPORT_DIR}/review_queue.json"
+  step "enqueue review" py -m pipeline.pois.review enqueue
   step "load pois"        py -m pipeline.pois.load_pois
   step "build gazetteer"  py -m pipeline.geocode.gazetteer_build
   step "export pois"      py -m pipeline.pois.export_geojson
   step "build poi tiles"  "${REPO_ROOT}/pipeline/build_tiles.sh" --pois-only
   step "reindex search"   py -m pipeline.search.build_index
+  step "publish decisions" py -m pipeline.pois.review published
 fi
 
 # QA runs last and does not gate publication: the artifacts are already live, so
