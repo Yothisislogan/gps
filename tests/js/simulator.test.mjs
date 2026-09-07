@@ -24,13 +24,18 @@ import {
 } from '../../web/js/navmath.js';
 import {
   DEFAULT_SPEED_KMH,
+  GAP_MS,
   GpxTrack,
+  JITTER_M,
   SimulatedTrack,
   createPositionSource,
   parseGpx,
   simulatorOptions,
   trackSource,
 } from '../../web/js/simulator.js';
+
+/** Jitter plus what snapping to a coarse polyline adds on a bend. */
+const ON_LINE_M = JITTER_M + 2;
 
 /** Carretera a Masaya out of Managua: MGA, Rotonda Centroamérica, Metrocentro. */
 const ROUTE = [
@@ -79,12 +84,16 @@ describe('SimulatedTrack', () => {
   it('starts at the origin and ends at the destination', () => {
     const track = new SimulatedTrack(ROUTE, { speedKmh: 60 });
     const first = track.at(0);
-    assert.ok(haversineM({ lat: first.coords.latitude, lon: first.coords.longitude }, ROUTE[0]) < 1);
+    assert.ok(
+      haversineM({ lat: first.coords.latitude, lon: first.coords.longitude }, ROUTE[0]) <
+        ON_LINE_M,
+    );
 
     // Long past the end: the track clamps rather than driving into the sea.
     const last = track.at((track.totalM / (60 / 3.6)) * 1000 + 60_000);
     const end = ROUTE[ROUTE.length - 1];
-    assert.ok(haversineM({ lat: last.coords.latitude, lon: last.coords.longitude }, end) < 1);
+    // Well inside ARRIVAL_RADIUS_M, which is what actually has to hold.
+    assert.ok(haversineM({ lat: last.coords.latitude, lon: last.coords.longitude }, end) < ON_LINE_M);
   });
 
   it('covers the requested speed, not some other one', () => {
@@ -102,22 +111,102 @@ describe('SimulatedTrack', () => {
     assert.equal(track.finishedAt(forever), true);
   });
 
-  it('stays on the line when no detour was asked for', () => {
+  it('stays within receiver noise of the line when no detour was asked for', () => {
+    // The point of the bound: jitter must be small enough that a plain drive
+    // never trips the 40 m off-route threshold, or every simulated run
+    // reroutes and the simulator is useless for testing rerouting.
     const track = new SimulatedTrack(ROUTE, { speedKmh: 40 });
     const cumulative = cumulativeDistances(ROUTE);
-    for (let ms = 0; ms < 900_000; ms += 30_000) {
+    for (let ms = 0; ms < 900_000; ms += 1000) {
       const fix = track.at(ms);
+      if (!fix) continue;
       const snapped = snapToRoute(
         { lat: fix.coords.latitude, lon: fix.coords.longitude },
         ROUTE,
         { cumulative },
       );
-      assert.ok(snapped.distanceM < 2, `drifted ${snapped.distanceM.toFixed(1)} m at ${ms} ms`);
+      assert.ok(
+        snapped.distanceM < ON_LINE_M,
+        `drifted ${snapped.distanceM.toFixed(1)} m at ${ms} ms`,
+      );
+    }
+  });
+
+  it('scatters the fixes rather than tracing the centreline exactly', () => {
+    const track = new SimulatedTrack(ROUTE, { speedKmh: 40 });
+    let scattered = 0;
+    for (let ms = 0; ms < 120_000; ms += 1000) {
+      const fix = track.at(ms);
+      if (!fix) continue;
+      const snapped = snapToRoute({ lat: fix.coords.latitude, lon: fix.coords.longitude }, ROUTE);
+      if (snapped.distanceM > 0.5) scattered += 1;
+    }
+    assert.ok(scattered > 60, `only ${scattered} of ~120 fixes carried any noise`);
+  });
+
+  it('is deterministic, so a failure reproduces', () => {
+    const a = new SimulatedTrack(ROUTE, { speedKmh: 40 });
+    const b = new SimulatedTrack(ROUTE, { speedKmh: 40 });
+    for (const ms of [0, 37_000, 500_000]) {
+      assert.deepEqual(a.at(ms)?.coords.latitude, b.at(ms)?.coords.latitude);
+      assert.deepEqual(a.at(ms)?.coords.longitude, b.at(ms)?.coords.longitude);
+    }
+  });
+
+  it('drops one run of fixes, so a signal gap can be tested', () => {
+    const track = new SimulatedTrack(ROUTE, { speedKmh: 40 });
+    let dropped = 0;
+    let runs = 0;
+    let previousWasFix = true;
+    for (let ms = 0; ms < 1_200_000; ms += 1000) {
+      const fix = track.at(ms);
+      if (!fix) {
+        dropped += 1;
+        if (previousWasFix) runs += 1;
+        previousWasFix = false;
+      } else {
+        previousWasFix = true;
+      }
+    }
+    assert.equal(runs, 1, 'expected exactly one dropout per drive');
+    assert.equal(dropped, GAP_MS / 1000);
+  });
+
+  it('keeps moving through the gap, so the far side is a jump forward', () => {
+    // This is the case that produces a false reroute: the vehicle is 165 m
+    // further along at 40 km/h and a forward-only snapper can miss it.
+    const track = new SimulatedTrack(ROUTE, { speedKmh: 40, jitterM: 0 });
+    const before = track.at(0);
+    let gapStart = null;
+    for (let ms = 0; ms < 1_200_000; ms += 1000) {
+      if (track.inGap(ms)) {
+        gapStart = ms;
+        break;
+      }
+    }
+    assert.ok(gapStart !== null, 'no gap found');
+    const across = track.distanceAt(gapStart + GAP_MS) - track.distanceAt(gapStart - 1000);
+    assert.ok(across > 150, `only advanced ${across.toFixed(0)} m across the gap`);
+    assert.ok(before);
+  });
+
+  it('can be built without noise or a gap, for a test that wants neither', () => {
+    const track = new SimulatedTrack(ROUTE, { speedKmh: 40, jitterM: 0, gapMs: 0 });
+    const cumulative = cumulativeDistances(ROUTE);
+    for (let ms = 0; ms < 600_000; ms += 5000) {
+      const fix = track.at(ms);
+      assert.ok(fix, `no fix at ${ms} ms`);
+      const snapped = snapToRoute(
+        { lat: fix.coords.latitude, lon: fix.coords.longitude },
+        ROUTE,
+        { cumulative },
+      );
+      assert.ok(snapped.distanceM < 1);
     }
   });
 
   it('reports a heading along the road rather than nothing', () => {
-    const track = new SimulatedTrack(ROUTE, { speedKmh: 40 });
+    const track = new SimulatedTrack(ROUTE, { speedKmh: 40, jitterM: 0 });
     const heading = track.at(60_000).coords.heading;
     assert.ok(Number.isFinite(heading));
     assert.ok(heading >= 0 && heading < 360);
@@ -125,10 +214,13 @@ describe('SimulatedTrack', () => {
 
   it('leaves the route far enough for the off-route detector to fire', () => {
     const track = new SimulatedTrack(ROUTE, { speedKmh: 40, detour: true });
+    // Asserted against navmath's own detector, not a hard-coded distance, so
+    // this follows the threshold instead of quietly testing nothing if it moves.
     const history = [];
     let tripped = false;
     for (let ms = 0; ms < 1_800_000; ms += 1000) {
       const fix = track.at(ms);
+      if (!fix) continue;
       const snapped = snapToRoute({ lat: fix.coords.latitude, lon: fix.coords.longitude }, ROUTE);
       history.push({ distanceM: snapped.distanceM, speedMps: fix.coords.speed });
       if (history.length > OFF_ROUTE_FIXES + 3) history.shift();
@@ -141,7 +233,7 @@ describe('SimulatedTrack', () => {
   });
 
   it('follows the new line after a reroute instead of looping', () => {
-    const track = new SimulatedTrack(ROUTE, { speedKmh: 40, detour: true });
+    const track = new SimulatedTrack(ROUTE, { speedKmh: 40, detour: true, jitterM: 0, gapMs: 0 });
     track.at(600_000);
     const rerouted = [
       { lat: 12.1094, lon: -86.2545 },
@@ -151,10 +243,7 @@ describe('SimulatedTrack', () => {
     track.setShape(rerouted, 600_000);
 
     const fix = track.at(630_000);
-    const snapped = snapToRoute(
-      { lat: fix.coords.latitude, lon: fix.coords.longitude },
-      rerouted,
-    );
+    const snapped = snapToRoute({ lat: fix.coords.latitude, lon: fix.coords.longitude }, rerouted);
     assert.ok(snapped.distanceM < 2, `still ${snapped.distanceM.toFixed(1)} m off the new route`);
   });
 
@@ -282,7 +371,7 @@ describe('trackSource', () => {
 
   it('delivers a first fix immediately, then one per interval', () => {
     const timers = fakeTimers();
-    const source = trackSource(new SimulatedTrack(ROUTE, { speedKmh: 40 }), {
+    const source = trackSource(new SimulatedTrack(ROUTE, { speedKmh: 40, gapMs: 0 }), {
       intervalMs: 1000,
       now: timers.now,
       setInterval: timers.setInterval,
@@ -302,7 +391,7 @@ describe('trackSource', () => {
   });
 
   it('hands out fixes shaped like GeolocationPosition', () => {
-    const source = trackSource(new SimulatedTrack(ROUTE, { speedKmh: 40 }));
+    const source = trackSource(new SimulatedTrack(ROUTE, { speedKmh: 40, gapMs: 0 }));
     let fix = null;
     const id = source.watchPosition((f) => {
       fix = f;

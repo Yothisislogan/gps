@@ -225,6 +225,9 @@ road.
 Turn-by-turn cannot be checked from a desk. Append to any map URL:
 
 - `?sim=1` — drive the active route at 40 km/h; `&speed=80` for anything else.
+  Fixes arrive at 1 Hz with ±5 m of position noise and one 15 s signal
+  dropout, because a track that is exactly on the centreline and never drops
+  will let you tune an off-route detector that fails on the first real drive.
 - `?sim=1&detour=1` — leave the route a third of the way in, so the off-route
   detector and one reroute actually fire.
 - `?gpx=<url>` — replay a recorded track at its own timestamps, red lights

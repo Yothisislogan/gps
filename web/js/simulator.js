@@ -16,7 +16,8 @@
  *
  * Query parameters, all off unless asked for:
  *
- *   ?sim=1              drive the active route at 40 km/h
+ *   ?sim=1              drive the active route at 40 km/h, 1 Hz fixes,
+ *                       +/-5 m of position noise, one 15 s signal dropout
  *   ?sim=1&speed=80     ... at 80 km/h
  *   ?sim=1&detour=1     leave the route a third of the way in, so the
  *                       off-route detector and one reroute actually fire
@@ -40,13 +41,34 @@ import {
 export const FIX_INTERVAL_MS = 1000;
 /** Default cruise, km/h. Managua traffic, not the open Panamericana. */
 export const DEFAULT_SPEED_KMH = 40;
-/** Fraction of the route at which `detour=1` wanders off. */
-export const DETOUR_AT = 0.3;
+/** Fraction of the route at which `detour=1` wanders off, and for how long. */
+export const DETOUR_AT = 0.4;
+export const DETOUR_SPAN = 0.15;
 /**
  * How far off the line the detour goes. isOffRoute() wants three consecutive
- * fixes past 40 m, so this has to clear that with room for the snap tolerance.
+ * fixes past 40 m, so this has to clear that with room for jitter and for the
+ * snap tolerance.
  */
-export const DETOUR_OFFSET_M = 120;
+export const DETOUR_OFFSET_M = 80;
+
+/**
+ * Position noise, metres. A phone on a dash mount is never exactly on the
+ * centreline, and an off-route detector tuned against a track that is will be
+ * tuned wrong.
+ */
+export const JITTER_M = 5;
+
+/**
+ * One dropout per drive, and where it starts.
+ *
+ * Signal goes on the Carretera Sur and in the cuts around Las Nubes. What that
+ * must NOT do is look like leaving the route: no fixes arrive, so the off-route
+ * history stops growing, and the fix on the far side is 165 m further along at
+ * 40 km/h. A snapper that only searches forward from the last index gets that
+ * wrong, and the driver is told to recalculate for no reason.
+ */
+export const GAP_AT = 0.6;
+export const GAP_MS = 15_000;
 
 /**
  * Read the simulator's settings out of a URL.
@@ -97,14 +119,19 @@ export class SimulatedTrack {
   /**
    * @param {Array<{lat: number, lon: number}>} shape
    * @param {{speedKmh?: number, detour?: boolean, detourAt?: number,
-   *          detourOffsetM?: number}} [options]
+   *          detourSpan?: number, detourOffsetM?: number, jitterM?: number,
+   *          gapAt?: number, gapMs?: number}} [options]
    */
   constructor(shape, options = {}) {
     this.setShape(shape);
     this.speedMps = ((options.speedKmh ?? DEFAULT_SPEED_KMH) * 1000) / 3600;
     this.detour = Boolean(options.detour);
     this.detourAt = options.detourAt ?? DETOUR_AT;
+    this.detourSpan = options.detourSpan ?? DETOUR_SPAN;
     this.detourOffsetM = options.detourOffsetM ?? DETOUR_OFFSET_M;
+    this.jitterM = options.jitterM ?? JITTER_M;
+    this.gapAt = options.gapAt ?? GAP_AT;
+    this.gapMs = options.gapMs ?? GAP_MS;
   }
 
   /**
@@ -148,6 +175,7 @@ export class SimulatedTrack {
    */
   at(elapsedMs) {
     if (!this.shape.length) return null;
+    if (this.inGap(elapsedMs)) return null;
     const alongM = this.distanceAt(elapsedMs);
     const here = pointAtDistance(this.shape, alongM, this.cumulative);
     if (!here) return null;
@@ -162,19 +190,26 @@ export class SimulatedTrack {
 
     if (this.detour && !this.detourDone && this.totalM > 0) {
       const fraction = alongM / this.totalM;
-      if (fraction >= this.detourAt) {
-        // Sideways, not along: a point 120 m ahead is still on the road, and
-        // the whole purpose is to be off it.
+      // A segment, not the rest of the drive: if the app fails to reroute, the
+      // track rejoining makes that visible instead of hiding it behind a
+      // permanently-off-route display.
+      if (fraction >= this.detourAt && fraction <= this.detourAt + this.detourSpan) {
+        // Sideways, not along: a point 80 m further down the road is still on
+        // the road, and the whole purpose is to be off it.
         const away = ((heading ?? 0) + 90) % 360;
-        // Ramp in over the first stretch so the fixes look like a driver
-        // taking a side street, not like a receiver glitch. isOffRoute()
-        // wants three consecutive fixes past the threshold; a step function
-        // gives it those instantly and tests nothing about the ramp.
+        // Ramp in so the fixes look like a driver taking a side street rather
+        // than like a receiver glitch. isOffRoute() wants three consecutive
+        // fixes past the threshold; a step function hands it those instantly
+        // and tests nothing about how the detector behaves on the way out.
         const past = (fraction - this.detourAt) * this.totalM;
         const offset = Math.min(this.detourOffsetM, 20 + past);
         point = destination(here, away, offset);
       }
     }
+
+    // Applied last, so it perturbs the detour too: a real receiver is noisy
+    // wherever the vehicle happens to be.
+    point = this.jitter(point, elapsedMs);
 
     return {
       coords: {
@@ -189,6 +224,42 @@ export class SimulatedTrack {
       },
       timestamp: Date.now(),
     };
+  }
+
+  /**
+   * Whether this instant falls inside the drive's one signal dropout.
+   *
+   * @param {number} elapsedMs
+   */
+  inGap(elapsedMs) {
+    if (!(this.gapMs > 0) || !(this.totalM > 0)) return false;
+    const startMs = this.originMs + ((this.gapAt * this.totalM) / this.speedMps) * 1000;
+    return elapsedMs >= startMs && elapsedMs < startMs + this.gapMs;
+  }
+
+  /**
+   * Scatter a point by up to `jitterM`, deterministically.
+   *
+   * Deterministic on purpose: `at(ms)` has to stay a pure function of elapsed
+   * time or a test cannot assert anything about it, and a bug that only
+   * reproduces on one random seed is a bug nobody fixes.
+   *
+   * @param {{lat: number, lon: number}} point
+   * @param {number} elapsedMs
+   */
+  jitter(point, elapsedMs) {
+    if (!(this.jitterM > 0)) return point;
+    const tick = Math.floor(elapsedMs / 1000);
+    // mulberry32, two draws: one bearing, one radius.
+    const draw = (n) => {
+      let x = (n + 0x6d2b79f5) | 0;
+      x = Math.imul(x ^ (x >>> 15), x | 1);
+      x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+    // sqrt keeps the scatter uniform over the disc instead of clustering at
+    // the centre, which is what a receiver's error actually looks like.
+    return destination(point, draw(tick) * 360, Math.sqrt(draw(tick * 2 + 1)) * this.jitterM);
   }
 
   /** Tell the track a reroute happened, so it stops wandering. */
