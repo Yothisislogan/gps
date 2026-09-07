@@ -33,6 +33,7 @@ import {
   snapToRoute,
   spokenDistance,
 } from './navmath.js';
+import { createPositionSource, simulatorOptions } from './simulator.js';
 import { el, formatDuration, t, toast } from './ui.js';
 import { isVoiceEnabled, primeVoices, setVoiceEnabled, speak } from './voice.js';
 
@@ -248,6 +249,10 @@ function adoptRoute(response) {
   session.spoken = new Set();
   const shape = (response.trip?.legs || []).map((leg) => leg.shape).filter(Boolean)[0];
   if (shape) session.map?.showRoute(shape, { fit: false });
+  // A simulated drive has to follow the new line too. Left on the old one it
+  // would go off route again immediately, and the reroute loop that produces
+  // looks exactly like a bug in rerouting.
+  session.source?.adoptShape?.(session.plan.shape);
   persist();
 }
 
@@ -331,6 +336,7 @@ export async function startNavigation(options) {
     rerouting: false,
     onEnd: options.onEnd,
     wakeLock: null,
+    source: null,
     watchId: null,
     unwatchVisibility: null,
   };
@@ -346,12 +352,25 @@ export async function startNavigation(options) {
   }
   session.unwatchVisibility = watchVisibility();
 
-  if (!('geolocation' in navigator)) {
+  // ?sim=1 / ?gpx= replace the receiver and nothing else: every line below
+  // this one runs identically on a simulated drive and a real one.
+  const sim = simulatorOptions();
+  session.source =
+    (await createPositionSource({ shape: plan.shape, options: sim })) ??
+    ('geolocation' in navigator ? navigator.geolocation : null);
+
+  if (!session.source) {
     toast(t('dir.noPosition'), { kind: 'error' });
     stopNavigation();
     return;
   }
-  session.watchId = navigator.geolocation.watchPosition(onFix, () => {}, {
+  if (sim.enabled) {
+    toast(
+      sim.gpx ? 'Simulación: reproduciendo GPX' : `Simulación a ${Math.round(sim.speedKmh)} km/h`,
+      { durationMs: 6000 },
+    );
+  }
+  session.watchId = session.source.watchPosition(onFix, () => {}, {
     enableHighAccuracy: true,
     maximumAge: 1000,
     timeout: 15000,
@@ -368,8 +387,8 @@ export async function startNavigation(options) {
 /** Stop guidance and put the screen back. */
 export function stopNavigation() {
   if (!session) return;
-  if (session.watchId !== null && 'geolocation' in navigator) {
-    navigator.geolocation.clearWatch(session.watchId);
+  if (session.watchId !== null) {
+    session.source?.clearWatch(session.watchId);
   }
   if (session.wakeLock) {
     try {

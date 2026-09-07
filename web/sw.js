@@ -8,7 +8,7 @@
  * (a `.pmtiles` archive is read with byte ranges, and a 206 cannot be cached).
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `nicanav-shell-${VERSION}`;
 const ASSET_CACHE = `nicanav-assets-${VERSION}`;
 
@@ -32,6 +32,9 @@ const SHELL = [
   '/js/nav.js',
   '/js/navmath.js',
   '/js/voice.js',
+  // nav.js imports this statically, so leaving it out breaks offline
+  // navigation with a module-resolution error rather than a missing feature.
+  '/js/simulator.js',
   '/js/offline.js',
   '/style/nicanav.json',
   '/style/nicanav-night.json',
