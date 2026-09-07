@@ -19,14 +19,14 @@ class TestBareLeafTokens:
         ("overture", "expected"),
         [
             ("restaurant", "restaurante"),
-            ("fast_food", "comida_rapida"),
+            ("fast_food_restaurant", "comida_rapida"),
             ("cafe", "cafe"),
             ("bar", "bar"),
             ("pharmacy", "farmacia"),
             ("hotel", "hotel"),
-            ("supermarket", "supermercado"),
-            ("atm", "cajero"),
-            ("bank", "banco"),
+            ("grocery_store", "supermercado"),
+            ("atms", "cajero"),
+            ("bank_credit_union", "banco"),
             ("hospital", "hospital"),
             ("gas_station", "gasolinera"),
             ("pizza_restaurant", "pizzeria"),
@@ -35,16 +35,22 @@ class TestBareLeafTokens:
     def test_bare_token_resolves(self, overture: str, expected: str):
         assert category_for_overture(overture) == expected
 
-    def test_dotted_path_still_resolves(self):
-        # The CSV's own form must keep working: it is what the parent fallback
-        # walks, and what the tests for the hierarchy rely on.
-        assert category_for_overture("eat_and_drink.restaurant") == "restaurante"
+    def test_the_column_holds_bare_tokens_not_dotted_paths(self):
+        # The regression this file exists for: the column used to hold dotted
+        # paths that matched nothing, sending 70% of Nicaraguan places to `otro`.
+        from pipeline.pois.taxonomy import all_categories
 
-    def test_unknown_leaf_falls_back_to_its_parent(self):
-        assert category_for_overture("eat_and_drink.restaurant.neapolitan_pizza") in {
-            "restaurante",
-            "pizzeria",
-        }
+        for category in all_categories():
+            for token in category.overture_categories:
+                assert "." not in token, (
+                    f"{category.category_id} still lists a dotted path: {token}"
+                )
+
+    def test_a_dotted_path_resolves_by_its_leaf(self):
+        # Belt and braces: the column holds bare tokens now, but a caller that
+        # passes a hierarchy path must not silently get `otro`.
+        assert category_for_overture("eat_and_drink.restaurant") == "restaurante"
+        assert category_for_overture("anything.at.all.pizza_restaurant") == "pizzeria"
 
     @pytest.mark.parametrize("value", [None, "", "   ", "no_such_category_anywhere"])
     def test_unknown_returns_none(self, value: str | None):

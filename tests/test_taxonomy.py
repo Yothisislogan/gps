@@ -316,26 +316,29 @@ def test_tag_values_are_whitespace_tolerant() -> None:
 @pytest.mark.parametrize(
     ("category", "expected"),
     [
-        ("eat_and_drink.restaurant", "restaurante"),
-        ("eat_and_drink.bakery", "panaderia"),
-        ("automotive.gas_station", "gasolinera"),
-        ("automotive.tire_shop", "vulcanizacion"),
-        ("financial_service.atm", "cajero"),
-        ("health_and_medical.pharmacy", "farmacia"),
-        ("accommodation.hotel", "hotel"),
-        ("retail.convenience_store", "pulperia"),
+        # Verified against the 2026-08-19.0 release: these are the tokens the
+        # data actually carries. Overture's schema forbids dots in a category,
+        # so the dotted paths this list used to hold matched nothing.
+        ("restaurant", "restaurante"),
+        ("bakery", "panaderia"),
+        ("tire_dealer_and_repair", "vulcanizacion"),
+        ("atms", "cajero"),
+        ("pharmacy", "farmacia"),
+        ("pizza_restaurant", "pizzeria"),
+        ("grocery_store", "supermercado"),
     ],
 )
 def test_overture_exact_mapping(category: str, expected: str) -> None:
     assert category_for_overture(category) == expected
 
 
-def test_overture_unknown_leaf_falls_back_to_its_parent() -> None:
-    # A new Overture release adding a leaf must not drop the whole branch on the floor.
-    assert (
-        category_for_overture("eat_and_drink.restaurant.pizza_restaurant.neapolitan") == "pizzeria"
-    )
-    assert category_for_overture("eat_and_drink.restaurant.brand_new_thing") == "restaurante"
+def test_overture_dotted_input_still_falls_back_to_its_leaf() -> None:
+    # The CSV now holds bare leaf tokens, because that is what the data carries.
+    # The dotted handling is kept for defence: if a caller ever passes a
+    # hierarchy path (the docs render one with dots), the leaf must still win
+    # rather than the whole branch dropping on the floor.
+    assert category_for_overture("eat_and_drink.restaurant") == "restaurante"
+    assert category_for_overture("food_and_drink.casual_eatery.pizza_restaurant") == "pizzeria"
 
 
 def test_overture_is_case_and_whitespace_insensitive() -> None:
