@@ -22,6 +22,15 @@
     "for that route and becomes the assertion that actually matters — a route can be",
     "the right length and still be the wrong road.",
     "",
+    "SOURCE. Every route carries `source`. `agent` means the expectations were",
+    "reasoned out from coordinates and road classes by a model — informed, untested.",
+    "`driven` means somebody drove it with a GPS logger and the numbers came off the",
+    "track. Only `driven` routes can fail the nightly build; an `agent` route is run,",
+    "printed and diffed against the previous run, but a mismatch against a guess is a",
+    "fact about the guess, not about the router. Every route in this file is `agent`",
+    "today. Promote one by driving it, replacing expected_km, expected_minutes and",
+    "reference_shape with the recorded values, and setting source to driven.",
+    "",
     "Coordinates come from docs/gazetteer_seed.csv where a landmark exists there; the",
     "rest are marked UNVERIFIED in the route's `notes` and need a field fix.",
     "",
@@ -52,6 +61,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["turismo", "carretera_a_masaya", "larga"],
       "notes": "The route every arriving tourist drives. A local goes into Managua and down the Carretera a Masaya rather than east through Tipitapa: same distance, better road, fewer trucks. The Masaya waypoint is deliberately loose (2.5 km) because the bypass and the town centre are both defensible."
     },
@@ -73,6 +83,7 @@
       ],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["aeropuerto", "carretera_norte", "urbana"],
       "notes": "The first route any visitor takes. Carretera Norte west, then Pista Juan Pablo II or Pista Suburbana. The must_avoid ring is the Mercado Oriental: the streets inside it are mapped and technically routable but are a market floor in practice, and a router that cuts through there has failed even if it is two minutes faster on paper."
     },
@@ -94,6 +105,7 @@
       ],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["aeropuerto", "carretera_norte", "urbana", "direccion_inversa"],
       "notes": "Deliberately the reverse of mga-metrocentro's corridor. The Pista Juan Pablo II and the airport ramps are not symmetric: this case exists to catch a one-way or ramp error that only bites in one direction, which is the failure mode field drives keep finding."
     },
@@ -110,6 +122,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["aeropuerto", "corta"],
       "notes": "UNVERIFIED coordinates: both points are read off the satellite image of the terminal apron, not surveyed. The airport forecourt is a one-way loop, so the 280 m straight line should cost about a kilometre of driving; a result near 0.3 km means the loop is mapped as bidirectional. First impression for every arriving user, hence its own case."
     },
@@ -129,6 +142,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["turismo", "carretera_a_masaya"],
       "notes": "The artisan market is the single most-requested destination near the circle. The Nindirí waypoint pins the route to the Carretera a Masaya corridor rather than the Tipitapa–Masaya road, which is longer and rougher."
     },
@@ -145,6 +159,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "corta", "rotonda"],
       "notes": "720 m apart in a straight line but on opposite sides of the Pista Juan Pablo II. The honest answer is roughly a kilometre and a half around the Rotonda Rubén Darío; anything at or under 0.8 km means the router has driven across the pista where there is no crossing."
     },
@@ -166,6 +181,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_a_masaya", "rotonda", "corredor"],
       "notes": "Drive 2 of the field plan, end to end. The four waypoints are the rotondas and the empalme every driver passes, in order; if Valhalla starts skipping one it has found a shortcut through the residenciales that no local uses. This is the case that protects the whole Carretera a Masaya corridor, including its rotonda exits."
     },
@@ -185,6 +201,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_a_masaya", "rotonda", "urbana"],
       "notes": "The busiest short hop on the Carretera a Masaya. Both rotondas must appear in the shape: a route that reaches Galerías without passing Jean Paul Genie has gone through Villa Fontana's back streets, which is what the router does when the rotonda exits are mistagged."
     },
@@ -203,6 +220,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["panamericana_sur", "carazo", "larga"],
       "notes": "Carazo via the Panamericana Sur over El Crucero. UNVERIFIED coordinate for El Crucero (town centre read off the map, not surveyed), hence the 3 km radius. The alternative through Masatepe and San Marcos is a real road and roughly as long, so this case is about the router preferring the paved trunk, which is what a local does."
     },
@@ -221,6 +239,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["panamericana_sur", "carazo", "larga"],
       "notes": "Same corridor as managua-jinotepe but leaving it earlier, at the Diriamba empalme. Keeping both catches an error in only one of the two turn-offs."
     },
@@ -240,6 +259,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["turismo", "pueblos_blancos", "camino_dificil"],
       "notes": "UNVERIFIED destination coordinate: the lakeshore lodges sit on an unnamed shore road and the point is approximate. This case exists because the descent into the crater is steep, narrow and partly unpaved — exactly the geometry where an over-eager unpaved penalty makes the router refuse a road that is the only way in."
     },
@@ -256,6 +276,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["turismo", "pueblos_blancos", "granada"],
       "notes": "The classic half-day trip out of Granada. Leaving the colonial grid the right way is half the test: Granada's centro is a one-way chequerboard and a wrong exit adds four blocks before the driver is even on the highway."
     },
@@ -274,6 +295,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["granada", "urbana", "sentido_unico"],
       "notes": "Lake to fort, straight across the colonial grid, and the reason this case exists: Calle La Calzada is pedestrian at its lower end and the surrounding calles are one-way in alternating directions. A 2.0 km answer means the router drove the wrong way up a one-way; a 5 km answer means it has no idea which calles connect."
     },
@@ -292,6 +314,7 @@
       ],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["occidente", "urbana"],
       "notes": "Ciudad Sandino is reached on the Carretera Nueva a León. UNVERIFIED must_avoid coordinate: it marks the Carretera Vieja through Los Brasiles, a genuinely longer way round that the router picks whenever the Nueva's dual carriageway is mis-tagged as one-way in both halves."
     },
@@ -308,6 +331,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["turismo", "occidente", "camino_dificil"],
       "notes": "Weekend traffic for the whole west of Managua. The access road off the Carretera Nueva a León is the only way in; if it is missing from OSM this route either fails outright or returns something absurd through Mateare."
     },
@@ -326,6 +350,7 @@
       ],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["oriente", "corredor"],
       "notes": "The Tipitapa–Masaya road runs almost due south and is the bypass that keeps eastern traffic out of Managua. The must_avoid is the point: if the router sends this trip through the Rotonda Centroamérica it has decided the direct road does not exist, which is the classic symptom of a broken way join near Nindirí."
     },
@@ -342,6 +367,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_norte", "oriente"],
       "notes": "Straight out the Carretera Norte. Short, fast and boring, which is the point: if this one moves, something changed on the trunk road that every other eastern route also uses."
     },
@@ -358,6 +384,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_norte", "panamericana"],
       "notes": "San Benito is where the Panamericana Norte and the Carretera al Rama split; every long-distance route out of the circle to the north or the Caribbean passes through it. UNVERIFIED coordinate — the junction is large and the point is its approximate centre."
     },
@@ -377,6 +404,7 @@
       ],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["aeropuerto", "pista_suburbana", "urbana"],
       "notes": "The Pista Suburbana run: airport to the market and bus terminal that serves the whole south and east of the country. It is the natural test for the Suburbana's retornos, and the Oriental exclusion keeps the router on the pista instead of through the market."
     },
@@ -393,6 +421,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "travesia", "pista_juan_pablo_ii"],
       "notes": "East terminal to west terminal, the full width of Managua, and the trip the city's own freight actually makes. It crosses every pista and most of the rotondas, so it is the broadest single check that the urban graph is connected the way it looks."
     },
@@ -409,6 +438,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "corta", "centro_historico"],
       "notes": "Eight hundred metres of old centre, where the 1972 earthquake left a street grid that is half plaza and half service road. Short routes are where snapping errors show up as a doubled distance, which is why one is in the suite."
     },
@@ -425,6 +455,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "barrios"],
       "notes": "Embassies and offices to the restaurant grid. UNVERIFIED coordinates: both are barrio centroids from the gazetteer seed, not addresses, so the tolerance is wide on purpose — this case is about the shape of the route, not its length."
     },
@@ -441,6 +472,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "barrios", "corta"],
       "notes": "Two adjacent repartos with the Carretera a Masaya between them. UNVERIFIED barrio centroids. The interesting failure is a route that crosses the carretera anywhere other than a mapped crossing."
     },
@@ -457,6 +489,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "barrios", "retorno", "corta"],
       "notes": "The retorno case in miniature: 730 m apart, on opposite carriageways of the Carretera a Masaya. The honest route uses the retorno or the Rotonda Centroamérica and costs about 1.8 km. A sub-kilometre answer means Valhalla U-turned across a divided highway, which is the single most common Nicaraguan routing complaint. UNVERIFIED barrio centroids."
     },
@@ -473,6 +506,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "barrios", "rotonda"],
       "notes": "South-east Managua across to Distrito V. UNVERIFIED coordinates for both ends. Bello Horizonte's rotonda is one of the ones the field plan checks for correct flow, so an instruction check here is as valuable as the distance."
     },
@@ -491,6 +525,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "barrios", "pista_juan_pablo_ii"],
       "notes": "East to west along the Pista Juan Pablo II, the road that carries most cross-town traffic. The Zumen waypoint is where the pista meets the west side; missing it means the route took the Carretera Norte instead, which is longer in traffic even when it is shorter in metres. UNVERIFIED Linda Vista coordinate."
     },
@@ -509,6 +544,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["urbana", "barrios", "carretera_a_masaya"],
       "notes": "North-west barrio to a southern residencial: the diagonal no pista actually serves, so the honest route doglegs through the Rotonda Centroamérica. UNVERIFIED coordinates at both ends."
     },
@@ -527,6 +563,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["turismo", "carretera_a_masaya", "parque"],
       "notes": "The biggest tourist draw inside the circle. The last five kilometres are the park road from the Km 23 gate up to the crater rim; it is a real, paved, public road and if the router will not use it the park is effectively unreachable. Gate hours are not modelled — the route is checked, not whether the park is open."
     },
@@ -543,6 +580,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_sur", "sierras"],
       "notes": "Up the Carretera Sur into the Sierras — the steepest sustained climb in the circle and the place where a flat speed model shows up as a wildly optimistic ETA. UNVERIFIED destination coordinate."
     },
@@ -559,6 +597,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_a_ticuantepe", "corredor"],
       "notes": "The Ticuantepe turn-off leaves the Carretera a Masaya south of Las Colinas and is signposted with km posts that keep counting from Managua — the same chainage assumption pipeline/geocode/kmpost.py makes. If this route changes length, that assumption needs re-checking too."
     },
@@ -575,6 +614,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["masaya", "corta"],
       "notes": "Two town centres four kilometres apart with the Carretera a Masaya between them. UNVERIFIED Nindirí coordinate. Small towns are where OSM in Nicaragua is thinnest, so a short inter-town hop is a good canary for missing local streets."
     },
@@ -591,6 +631,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["pueblos_blancos", "turismo"],
       "notes": "The Pueblos Blancos loop between two of its stops. The connecting road runs through San Juan de Oriente and Niquinohomo and is narrow, so the ETA matters as much as the distance: a router that assumes 60 km/h here is half an hour wrong by the end of the loop."
     },
@@ -610,6 +651,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["carretera_a_masaya", "urbana", "direccion_inversa"],
       "notes": "Northbound on the Carretera a Masaya, the mirror of metrocentro-galerias. An ambulance run from Km 9.8 into the city: if the northbound carriageway or a rotonda exit is wrong, this is where it shows, and it will not show on the southbound case. UNVERIFIED hospital coordinate."
     },
@@ -626,6 +668,7 @@
       "must_avoid": [],
       "reference_shape": null,
       "reference_source": null,
+      "source": "agent",
       "tags": ["aeropuerto", "carretera_norte", "corta", "retorno"],
       "notes": "Two kilometres apart on opposite sides of the Carretera Norte, which is divided here. The answer should be noticeably longer than the straight line because of the retorno; if it is not, the median is missing from OSM and every airport arrival will be told to turn across four lanes."
     }

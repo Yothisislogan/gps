@@ -20,6 +20,7 @@ from pipeline.qa.golden_routes import (
     Case,
     check_case,
     load_cases,
+    main,
     overlap_fraction,
     sample_line,
 )
@@ -91,6 +92,39 @@ class TestGoldenRoutesFile:
         # A golden route without a note is a number nobody can maintain.
         cases, _ = load_cases()
         assert sum(1 for case in cases if case.notes.strip()) >= len(cases) * 0.8
+
+    def test_every_route_declares_where_its_numbers_came_from(self):
+        cases, _ = load_cases()
+        assert {case.source for case in cases} <= {"agent", "driven"}
+
+    def test_nothing_in_the_shipped_file_is_ground_truth_yet(self):
+        # The moment somebody drives one and sets source="driven", this test is
+        # meant to fail — that is the reminder to retune the tolerances against
+        # a measurement instead of an estimate.
+        cases, _ = load_cases()
+        assert not any(case.binding for case in cases), (
+            "a driven route appeared; check its tolerances came off the GPX"
+        )
+
+    def test_rejects_an_unknown_source(self, tmp_path: Path):
+        path = tmp_path / "routes.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "routes": [
+                        {
+                            "id": "guessed",
+                            "from": {"lat": 12.1, "lon": -86.2},
+                            "to": {"lat": 12.2, "lon": -86.3},
+                            "source": "vibes",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="source"):
+            load_cases(path)
 
     def test_rejects_duplicate_ids(self, tmp_path: Path):
         path = tmp_path / "routes.json"
@@ -233,6 +267,80 @@ class TestCheckCase:
         result = check_case(self.CASE, client, DEFAULTS)
         assert not result.ok
         assert result.error and "No suitable edges" in result.error
+
+
+class TestExitStatus:
+    """Whose expectations can turn the nightly build red."""
+
+    @staticmethod
+    def _routes_file(tmp_path: Path, source: str) -> Path:
+        path = tmp_path / "routes.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "routes": [
+                        {
+                            "id": "mismatch",
+                            "name": "mismatch",
+                            "from": {"lat": MGA[0], "lon": MGA[1]},
+                            "to": {"lat": METROCENTRO[0], "lon": METROCENTRO[1]},
+                            "expected_km": 14.0,
+                            "km_tolerance": 1.0,
+                            "source": source,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    @staticmethod
+    def _serve(monkeypatch, response: dict) -> None:
+        import pipeline.qa.golden_routes as module
+
+        monkeypatch.setattr(module, "ValhallaClient", lambda *a, **k: client_returning(response))
+
+    def test_an_agent_estimate_being_wrong_does_not_fail_the_run(
+        self, tmp_path: Path, monkeypatch, capsys
+    ):
+        self._serve(monkeypatch, straight_route(MGA, METROCENTRO, km=40.0))
+        code = main(["--routes", str(self._routes_file(tmp_path, "agent"))])
+        assert code == 0
+        out = capsys.readouterr().out
+        assert "do not fail the run" in out
+        assert "no driven routes" in out
+
+    def test_a_driven_route_being_wrong_does(self, tmp_path: Path, monkeypatch):
+        self._serve(monkeypatch, straight_route(MGA, METROCENTRO, km=40.0))
+        assert main(["--routes", str(self._routes_file(tmp_path, "driven"))]) == 1
+
+    def test_strict_promotes_agent_routes(self, tmp_path: Path, monkeypatch):
+        self._serve(monkeypatch, straight_route(MGA, METROCENTRO, km=40.0))
+        assert main(["--strict", "--routes", str(self._routes_file(tmp_path, "agent"))]) == 1
+
+    def test_an_agent_route_that_matches_still_passes(self, tmp_path: Path, monkeypatch):
+        self._serve(monkeypatch, straight_route(MGA, METROCENTRO, km=14.0))
+        assert main(["--routes", str(self._routes_file(tmp_path, "agent"))]) == 0
+
+    def test_a_router_that_answers_nothing_fails_whatever_the_source(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # A broken stack is not a question about ground truth.
+        import pipeline.qa.golden_routes as module
+        from common.valhalla import ValhallaClient
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, text="down")
+
+        monkeypatch.setattr(
+            module,
+            "ValhallaClient",
+            lambda *a, **k: ValhallaClient(
+                client=httpx.Client(transport=httpx.MockTransport(handler))
+            ),
+        )
+        assert main(["--routes", str(self._routes_file(tmp_path, "agent"))]) == 2
 
 
 class TestKpis:

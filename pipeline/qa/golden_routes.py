@@ -17,6 +17,14 @@ Each case in ``docs/golden_routes.json`` asserts some combination of:
   not go;
 * **geometry overlap** against a recorded reference shape, once field GPX exists.
 
+Every case carries a ``source``.  ``agent`` means the expectations were reasoned
+out from coordinates and road classes by a model, not measured; ``driven`` means
+somebody drove it with a GPS logger and the numbers came off the track.  Only
+``driven`` cases are ground truth, so only they can fail the build — an
+``agent`` case is reported, diffed and tracked, but a mismatch against a guess
+is a fact about the guess.  ``--strict`` overrides that when you want to see the
+whole suite red.
+
 Overlap is measured as the fraction of sampled points on the candidate route
 that fall within a buffer of the reference line.  That beats comparing shapes
 point-for-point: two encodings of the same drive differ in vertex placement
@@ -47,6 +55,11 @@ log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GOLDEN_ROUTES_PATH = REPO_ROOT / "docs" / "golden_routes.json"
 
+# A case is ground truth only when a person drove it. Anything else is a
+# hypothesis with a tolerance attached.
+BINDING_SOURCES = frozenset({"driven"})
+VALID_SOURCES = frozenset({"agent", "driven"})
+
 DEFAULTS: dict[str, float] = {
     "min_overlap": 0.9,
     "buffer_m": 30.0,
@@ -71,8 +84,14 @@ class Case:
     must_avoid: tuple[dict[str, Any], ...] = ()
     reference_shape: str | None = None
     reference_source: str | None = None
+    source: str = "agent"
     notes: str = ""
     tags: tuple[str, ...] = ()
+
+    @property
+    def binding(self) -> bool:
+        """Whether a failure here should fail the build."""
+        return self.source in BINDING_SOURCES
 
 
 @dataclass
@@ -91,6 +110,8 @@ class CaseResult:
         return {
             "id": self.case.id,
             "name": self.case.name,
+            "source": self.case.source,
+            "binding": self.case.binding,
             "ok": self.ok,
             "distance_km": self.distance_km,
             "duration_min": self.duration_min,
@@ -113,6 +134,12 @@ def load_cases(path: Path | str | None = None) -> tuple[list[Case], dict[str, fl
         if case_id in seen:
             raise ValueError(f"duplicate golden-route id: {case_id}")
         seen.add(case_id)
+        source = raw.get("source", "agent")
+        if source not in VALID_SOURCES:
+            raise ValueError(
+                f"golden route {case_id}: source={source!r}, expected one of "
+                + ", ".join(sorted(VALID_SOURCES))
+            )
         cases.append(
             Case(
                 id=case_id,
@@ -127,6 +154,7 @@ def load_cases(path: Path | str | None = None) -> tuple[list[Case], dict[str, fl
                 must_avoid=tuple(raw.get("must_avoid") or ()),
                 reference_shape=raw.get("reference_shape"),
                 reference_source=raw.get("reference_source"),
+                source=source,
                 notes=raw.get("notes", ""),
                 tags=tuple(raw.get("tags") or ()),
             )
@@ -278,14 +306,21 @@ def check_case(case: Case, client: ValhallaClient, defaults: dict[str, float]) -
 def _print_table(results: Sequence[CaseResult]) -> None:
     width = max((len(r.case.name) for r in results), default=20)
     for result in results:
-        mark = "ok  " if result.ok else "FAIL"
+        if result.ok:
+            mark = "ok  "
+        elif result.case.binding:
+            mark = "FAIL"
+        else:
+            # Not "FAIL": the route may well be right and the guess wrong.
+            mark = "diff"
         distance = (
             f"{result.distance_km:6.1f} km" if result.distance_km is not None else "     — km"
         )
         duration = (
             f"{result.duration_min:5.0f} min" if result.duration_min is not None else "    — min"
         )
-        print(f"  {mark}  {result.case.name:<{width}}  {distance}  {duration}")
+        origin = "" if result.case.binding else "  (agent)"
+        print(f"  {mark}  {result.case.name:<{width}}  {distance}  {duration}{origin}")
         if result.error:
             print(f"          error: {result.error}")
         for failure in result.failures:
@@ -340,6 +375,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--baseline", type=Path, default=None, help="compare against a previous --json run"
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="fail on agent-sourced mismatches too (default: report only)",
+    )
     parser.add_argument("--log-level", default="WARNING")
     return parser
 
@@ -370,9 +410,31 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _print_table(results)
 
-    failed = [result for result in results if not result.ok]
+    mismatched = [result for result in results if not result.ok]
     unreachable = [result for result in results if result.error]
-    print(f"\n{len(results) - len(failed)}/{len(results)} passed")
+
+    # A route the router could not compute at all is a broken stack, not a bad
+    # guess: that fails whatever the case's source says.
+    blocking = [
+        result
+        for result in mismatched
+        if result.error or result.case.binding or args.strict
+    ]
+    blocking_ids = {id(result) for result in blocking}
+    advisory = [result for result in mismatched if id(result) not in blocking_ids]
+
+    print(f"\n{len(results) - len(mismatched)}/{len(results)} matched expectations")
+    if advisory:
+        print(
+            f"{len(advisory)} of the mismatches are agent-sourced estimates and do not "
+            "fail the run"
+        )
+    if not any(result.case.binding for result in results):
+        print(
+            "no driven routes in this file yet — nothing here is ground truth. "
+            "Drive one with a GPS logger, set its source to \"driven\", and this "
+            "suite starts asserting."
+        )
 
     if args.json_out:
         atomic_write_text(
@@ -380,7 +442,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "valhalla_url": args.valhalla_url,
-                    "passed": len(results) - len(failed),
+                    "matched": len(results) - len(mismatched),
+                    "blocking_failures": len(blocking),
                     "total": len(results),
                     "results": [result.as_dict() for result in results],
                 },
@@ -396,7 +459,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if unreachable and len(unreachable) == len(results):
         print("\nthe router answered nothing at all — check that valhalla is up")
         return 2
-    return 1 if failed else 0
+    return 1 if blocking else 0
 
 
 if __name__ == "__main__":  # pragma: no cover
