@@ -15,6 +15,8 @@ custom_files/
 !.env.example
 !infra/.env.example
 secrets/
+infra/admin.htpasswd
+web/config.js
 
 # --- python ---
 __pycache__/
@@ -39,3 +41,9 @@ Thumbs.db
 # --- runtime ---
 *.log
 tmp/
+
+# Reproducible browser dependencies (npm ci && npm run build)
+node_modules/
+web/vendor/
+web/sprites/nicanav@2x.json
+web/sprites/nicanav@2x.png

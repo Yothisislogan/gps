@@ -1,0 +1,17 @@
+{
+  "name": "nicanav-web-assets",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build_vendor.mjs"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans": "5.3.0",
+    "maplibre-gl": "6.7.0",
+    "opening_hours": "3.14.0",
+    "pmtiles": "4.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  },
+  "type": "module"
+}

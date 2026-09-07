@@ -34,7 +34,7 @@ import {
   spokenDistance,
 } from './navmath.js';
 import { el, formatDuration, t, toast } from './ui.js';
-import { isVoiceEnabled, primeVoices, setVoiceEnabled, speak } from './voice.js';
+import { cancelSpeech, isVoiceEnabled, primeVoices, setVoiceEnabled, speak } from './voice.js';
 
 const SESSION_KEY = 'nicanav.nav';
 /** Fixes kept for the off-route detector — three consecutive, plus slack. */
@@ -169,8 +169,12 @@ function announce(state, progress) {
   }
 }
 
-function onFix(fix) {
-  if (!session) return;
+function onFix(fix, owner) {
+  if (!session || session !== owner) return;
+  // An imprecise or old fix can invent a wrong turn or announce arrival early.
+  if (!Number.isFinite(fix.coords.latitude) || !Number.isFinite(fix.coords.longitude) ||
+      !Number.isFinite(fix.coords.accuracy) || fix.coords.accuracy > 50 ||
+      !Number.isFinite(fix.timestamp) || Date.now() - fix.timestamp > 15000) return;
   const point = { lat: fix.coords.latitude, lon: fix.coords.longitude };
   const speedMps = Number.isFinite(fix.coords.speed) ? Math.max(0, fix.coords.speed) : NaN;
 
@@ -193,9 +197,9 @@ function onFix(fix) {
   }
 
   if (isArrival(point, session.destination, speedMps)) {
+    stopNavigation();
     speak('Llegaste a tu destino', { priority: 'high' });
     toast('Llegaste');
-    stopNavigation();
     return;
   }
 
@@ -214,33 +218,40 @@ async function reroute(point, heading) {
   const now = Date.now();
   if (now - session.lastRerouteAt < REROUTE_COOLDOWN_MS) return;
 
-  session.rerouting = true;
-  session.lastRerouteAt = now;
+  const owner = session;
+  owner.rerouting = true;
+  owner.lastRerouteAt = now;
+  owner.rerouteController = new AbortController();
   speak('Recalculando', { priority: 'high' });
 
   try {
     const response = await api.route({
+      ...owner.routeOptions,
       locations: [
         { lat: point.lat, lon: point.lon },
-        { lat: session.destination.lat, lon: session.destination.lon },
+        { lat: owner.destination.lat, lon: owner.destination.lon },
       ],
-      costing: 'auto',
       alternates: 0,
       heading: Number.isFinite(heading) ? heading : undefined,
-      language: 'es-ES',
-    });
+    }, { signal: owner.rerouteController.signal });
+    if (session !== owner) return;
     adoptRoute(response);
   } catch {
     // Signal drops on the Carretera Sur. Keep guiding on the old line rather
     // than blanking the banner; the next fix will try again after the cooldown.
-    toast(t('dir.failed'), { kind: 'error' });
+    if (session === owner) toast(t('dir.failed'), { kind: 'error' });
   } finally {
-    session.rerouting = false;
+    owner.rerouting = false;
+    owner.rerouteController = null;
   }
 }
 
 function adoptRoute(response) {
   if (!session) return;
+  if (response.nicanav?.closures_status === 'unavailable' &&
+      session.raw.nicanav?.closures_status !== 'unavailable') {
+    toast(t('dir.closuresUnavailable'), { kind: 'error' });
+  }
   session.plan = normalizeRoute(response, { lang: 'es' });
   session.raw = response;
   session.history = [];
@@ -257,7 +268,7 @@ function persist() {
   try {
     sessionStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ route: session.raw, destination: session.destination }),
+      JSON.stringify({ route: session.raw, destination: session.destination, routeOptions: session.routeOptions }),
     );
   } catch {
     /* storage is a convenience here */
@@ -289,11 +300,26 @@ async function acquireWakeLock() {
   }
 }
 
-function watchVisibility() {
+async function retainWakeLock(owner) {
+  if (owner.wakeLockPending || (owner.wakeLock && !owner.wakeLock.released)) return;
+  owner.wakeLockPending = true;
+  const lock = await acquireWakeLock();
+  owner.wakeLockPending = false;
+  if (session !== owner) {
+    if (lock) Promise.resolve(lock.release()).catch(() => {});
+    return;
+  }
+  owner.wakeLock = lock;
+  lock?.addEventListener('release', () => {
+    if (owner.wakeLock === lock) owner.wakeLock = null;
+  }, { once: true });
+}
+
+function watchVisibility(owner) {
   const handler = async () => {
-    if (!session) return;
-    if (document.visibilityState === 'visible' && !session.wakeLock) {
-      session.wakeLock = await acquireWakeLock();
+    if (session !== owner) return;
+    if (document.visibilityState === 'visible') {
+      await retainWakeLock(owner);
     }
   };
   document.addEventListener('visibilitychange', handler);
@@ -308,7 +334,7 @@ function watchVisibility() {
  * Begin guidance.
  *
  * @param {{map: any, route: any, destination: {lat: number, lon: number},
- *          onEnd?: () => void}} options
+ *          routeOptions?: object, onEnd?: () => void}} options
  */
 export async function startNavigation(options) {
   stopNavigation();
@@ -318,19 +344,22 @@ export async function startNavigation(options) {
 
   const plan = normalizeRoute(options.route, { lang: 'es' });
 
-  session = {
+  const owner = session = {
     map: options.map,
     raw: options.route,
     plan,
     destination: options.destination,
+    routeOptions: { costing: 'auto', language: 'es-ES', ...options.routeOptions },
     chrome: buildChrome(root),
     history: [],
     spoken: new Set(),
     lastIndex: 0,
     lastRerouteAt: 0,
     rerouting: false,
+    rerouteController: null,
     onEnd: options.onEnd,
     wakeLock: null,
+    wakeLockPending: false,
     watchId: null,
     unwatchVisibility: null,
   };
@@ -340,18 +369,23 @@ export async function startNavigation(options) {
   primeVoices();
   showSafetyNoticeOnce(root);
 
-  session.wakeLock = await acquireWakeLock();
-  if (!session.wakeLock) {
+  await retainWakeLock(owner);
+  if (session !== owner) return;
+  if (!owner.wakeLock) {
     toast('La pantalla puede apagarse: no se pudo mantener encendida', { durationMs: 6000 });
   }
-  session.unwatchVisibility = watchVisibility();
+  owner.unwatchVisibility = watchVisibility(owner);
 
   if (!('geolocation' in navigator)) {
     toast(t('dir.noPosition'), { kind: 'error' });
     stopNavigation();
     return;
   }
-  session.watchId = navigator.geolocation.watchPosition(onFix, () => {}, {
+  owner.watchId = navigator.geolocation.watchPosition((fix) => onFix(fix, owner), (error) => {
+    if (session !== owner) return;
+    toast(t('dir.noPosition'), { kind: 'error' });
+    if (error.code === 1) stopNavigation();
+  }, {
     enableHighAccuracy: true,
     maximumAge: 1000,
     timeout: 15000,
@@ -368,17 +402,22 @@ export async function startNavigation(options) {
 /** Stop guidance and put the screen back. */
 export function stopNavigation() {
   if (!session) return;
-  if (session.watchId !== null && 'geolocation' in navigator) {
-    navigator.geolocation.clearWatch(session.watchId);
+  const owner = session;
+  // Invalidate callbacks before releasing any asynchronous browser resources.
+  session = null;
+  owner.rerouteController?.abort();
+  cancelSpeech();
+  if (owner.watchId !== null && 'geolocation' in navigator) {
+    navigator.geolocation.clearWatch(owner.watchId);
   }
-  if (session.wakeLock) {
+  if (owner.wakeLock) {
     try {
-      session.wakeLock.release();
+      Promise.resolve(owner.wakeLock.release()).catch(() => {});
     } catch {
       /* already released */
     }
   }
-  if (session.unwatchVisibility) session.unwatchVisibility();
+  if (owner.unwatchVisibility) owner.unwatchVisibility();
 
   const root = document.getElementById('nav-root');
   if (root) {
@@ -391,8 +430,7 @@ export function stopNavigation() {
     /* ignore */
   }
 
-  const { onEnd } = session;
-  session = null;
+  const { onEnd } = owner;
   if (onEnd) onEnd();
 }
 

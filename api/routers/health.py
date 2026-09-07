@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Request
 from api.clients.db import Database
 from api.clients.meili import MeiliClient
 from common.config import Settings
+from common.data_status import data_status
 from common.valhalla import AsyncValhallaClient
 
 from ..deps import get_settings_dep
@@ -51,6 +52,7 @@ async def healthz(
         "meili": {"ok": await meili.health() if meili is not None else False},
         "db": {"ok": await database.health() if database is not None else False},
         "tiles": _tiles_status(settings),
+        "data": data_status(settings.metadata_dir),
     }
 
 

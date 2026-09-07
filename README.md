@@ -18,6 +18,9 @@ Nicaragua specifically**, at the four things Google does badly here:
 
 Nothing here is finished. See [what works today](#what-works-today).
 
+The [prioritized improvement list](docs/IMPROVEMENTS.md) records the code review,
+implemented reliability fixes, regression coverage and remaining launch work.
+
 ---
 
 ## Quickstart
@@ -26,7 +29,7 @@ Nothing here is finished. See [what works today](#what-works-today).
 git clone <this repo> && cd nicanav
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements/dev.txt
-make test          # 919 tests, no network, no database, no Docker
+make test          # 930 tests, no network, no database, no Docker
 ```
 
 To run the stack on a server:
@@ -69,10 +72,10 @@ month.
 | POI ingest, conflation, taxonomy, load, export | **Built and tested** against synthetic data |
 | Search index (Meilisearch, atomic swap, Nicaraguan synonyms) | **Built and tested** |
 | Routing proxy, geocoding cascade, POI cards, submissions | **Built and tested** with fakes |
-| PWA: map, search, place cards, directions, navigation, offline tiles | **Built**, verified statically — *never opened in a real browser* |
+| PWA: map, search, place cards, directions, navigation, offline tiles | **Built**; route selection, session races, request deadlines and worker caching have executable regression tests. Full rendering and offline restart are **not yet verified**. |
 | Map style, sprite sheet | **Built and generated** from the taxonomy |
 | QA: golden routes, KPIs, disconnection check | **Built and tested** |
-| Compose stack, nginx, nightly pipeline, backups | **Written**, *never run against real services* |
+| Compose stack, nginx, nightly pipeline, backups | **Written**; config and admin credential preparation are wired into `make up`. *Not yet run against real services.* |
 | Admin moderation UI | **Built and tested** with fakes: review queue, alias approval, closures, POI editor |
 | Field data programme (§8 of the plan) | **Not started** — this is the moat and it is driving time, not code |
 | Native Android / iOS | **Not started** (plan §6.2) |
@@ -95,7 +98,7 @@ that walks them, and `make verify` automates most of it.
 | `infra/` | Compose stack, nginx, Dockerfiles, Valhalla config, cron |
 | `scripts/` | One-shot tools: the curation circle, style and sprite generation, backups, deploy verification |
 | `docs/` | The plan, the interface contract, and the curated data: taxonomy, gazetteer, carreteras, golden routes |
-| `tests/` | 919 Python tests plus 33 `node --test` cases for the nav geometry |
+| `tests/` | 930 Python tests plus 54 `node --test` cases for navigation, route selection, requests and worker behavior |
 
 ## Data and licences
 
@@ -124,6 +127,8 @@ everyone gets them, not in a private table here.
 
 ## Further reading
 
+- [docs/DATA-TRUST-REVIEW.md](docs/DATA-TRUST-REVIEW.md) — data freshness, publication risks and additional usability priorities
+- [docs/UX-BRIEF.md](docs/UX-BRIEF.md) — UX priorities, implementation phases and acceptance criteria
 - [docs/PLAN.md](docs/PLAN.md) — the whole plan and the reasoning behind every choice
 - [docs/SPEC.md](docs/SPEC.md) — the normative interface contract
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) — operating it, and the first-deploy checklist

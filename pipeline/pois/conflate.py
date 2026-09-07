@@ -285,6 +285,7 @@ class PoiRecord:
     status: str = "unverified"
     brand: str | None = None
     gers_id: str | None = None
+    license: str | None = None
     confidence: float = 0.0
     popularity: float = 0.0
 
@@ -318,6 +319,7 @@ class PoiRecord:
         values["source"] = str(values["source"])
         values["source_id"] = str(values["source_id"])
         values["name"] = str(values["name"] or "")
+        values["license"] = data.get("license") or data.get("overture_license")
         return cls(**values)
 
 
@@ -641,6 +643,7 @@ class MergedPoi:
     popularity: float = 0.0
     sources: dict[str, str] = field(default_factory=dict)
     source_keys: tuple[str, ...] = ()
+    source_licenses: dict[str, str] = field(default_factory=dict)
     field_sources: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -672,6 +675,7 @@ class MergedPoi:
             "popularity": round(self.popularity, 4),
             "sources": dict(self.sources),
             "source_keys": list(self.source_keys),
+            "source_licenses": dict(self.source_licenses),
             "field_sources": dict(self.field_sources),
         }
         return {
@@ -763,6 +767,7 @@ def merge_records(records: Sequence[PoiRecord]) -> MergedPoi:
         popularity=max((record.popularity for record in records), default=0.0),
         sources=sources,
         source_keys=tuple(sorted(record.key for record in records)),
+        source_licenses={record.key: record.license for record in records if record.license},
         field_sources=field_sources,
     )
 
@@ -807,6 +812,7 @@ def conflate(
     *,
     radius_m: float = BLOCK_RADIUS_M,
     chain_keys: frozenset[str] | None = None,
+    decisions: Sequence[Mapping[str, Any]] = (),
 ) -> ConflationResult:
     """Block, score, decide and merge a corpus of source records.
 
@@ -826,12 +832,47 @@ def conflate(
 
     pairs: list[MatchPair] = []
     union = _UnionFind(len(parsed))
-    for i, j in candidate_pairs(parsed, radius_m=radius_m):
+    indices = {record.key: i for i, record in enumerate(parsed)}
+    overrides = {}
+    for row in decisions:
+        key = tuple(sorted((row["left_key"], row["right_key"])))
+        decision = Decision(row["decision"])
+        if decision is Decision.REVIEW:
+            raise ValueError("Only final decisions belong in a snapshot")
+        if key in overrides and overrides[key] != decision:
+            raise ValueError(f"Conflicting decisions for {key}")
+        overrides[key] = decision
+    forbidden = [
+        (indices[a], indices[b])
+        for (a, b), d in overrides.items()
+        if d is Decision.SEPARATE and a in indices and b in indices
+    ]
+
+    def join(i, j, *, explicit=False):
+        roots = {union.find(i), union.find(j)}
+        if any(union.find(a) in roots and union.find(b) in roots for a, b in forbidden):
+            if explicit:
+                raise ValueError("Merge decisions conflict with a separate decision")
+            return False
+        union.union(i, j)
+        return True
+
+    # Human merges are evaluated before automatic edges, including distant pairs.
+    for (a, b), decision in sorted(overrides.items()):
+        if decision is Decision.MERGE and a in indices and b in indices:
+            join(indices[a], indices[b], explicit=True)
+    candidates = set(candidate_pairs(parsed, radius_m=radius_m))
+    candidates.update(
+        tuple(sorted((indices[a], indices[b])))
+        for a, b in overrides
+        if a in indices and b in indices
+    )
+    for i, j in sorted(candidates):
         score = score_pair(parsed[i], parsed[j], chain_keys=chain_keys)
-        decision = decide(score)
+        decision = overrides.get(tuple(sorted((parsed[i].key, parsed[j].key))), decide(score))
+        if decision is Decision.MERGE and not join(i, j):
+            decision = Decision.SEPARATE
         pairs.append(MatchPair(left=parsed[i], right=parsed[j], score=score, decision=decision))
-        if decision is Decision.MERGE:
-            union.union(i, j)
 
     clusters: dict[int, list[PoiRecord]] = {}
     for index, record in enumerate(parsed):
@@ -916,6 +957,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=BLOCK_RADIUS_M,
         help=f"blocking radius in metres (default {BLOCK_RADIUS_M:g})",
     )
+    parser.add_argument("--decisions", type=Path, help="snapshot of durable human decisions")
     parser.add_argument("--log-level", default="INFO")
     return parser
 
@@ -928,7 +970,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Fail before doing any work if the taxonomy is broken: category agreement depends on it.
         load_taxonomy()
         records = _read_inputs(args.inputs)
-        result = conflate(records, radius_m=args.radius_m)
+        from pipeline.pois.review import load_decisions
+
+        decisions = load_decisions(args.decisions) if args.decisions else []
+        result = conflate(records, radius_m=args.radius_m, decisions=decisions)
         written = write_geojsonseq(args.output, (poi.as_feature() for poi in result.merged))
         log.info("wrote %d merged POIs to %s", written, args.output)
         if args.queue is not None:

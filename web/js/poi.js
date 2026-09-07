@@ -302,14 +302,16 @@ export function maneuverGlyph(type) {
 /**
  * Render the route sheet: summary, alternates, and the turn list.
  * @param {any} response the /api/route reply (native Valhalla format)
- * @param {{onStart: () => void, onPickAlternate?: (index: number) => void, active?: number}} handlers
+ * @param {{onStart: () => void, onPickAlternate?: (index: number) => void, active?: number,
+ *          avoidUnpaved?: boolean, onAvoidUnpavedChange?: (value: boolean) => void}} handlers
  */
 export function renderRoute(response, handlers) {
-  const trip = response.trip || {};
+  const routes = [response, ...(response.alternates || [])];
+  const active = handlers.active ?? 0;
+  const trip = (routes[active] || response).trip || {};
   const summary = trip.summary || {};
   const legs = trip.legs || [];
   const maneuvers = legs.flatMap((leg) => leg.maneuvers || []);
-  const alternates = response.alternates || [];
 
   const steps = el(
     'ol',
@@ -325,24 +327,24 @@ export function renderRoute(response, handlers) {
     ),
   );
 
-  const alternateButtons = alternates.map((alternate, index) => {
+  const alternateButtons = routes.length > 1 ? routes.map((alternate, index) => {
     const alternateSummary = (alternate.trip || {}).summary || {};
     return el(
       'button',
       {
         class: 'route__alt',
         type: 'button',
-        'aria-pressed': String((handlers.active ?? -1) === index),
+        'aria-pressed': String(active === index),
         onClick: () => handlers.onPickAlternate && handlers.onPickAlternate(index),
       },
       [
-        el('span', { text: `${t('dir.route')} ${index + 2}` }),
+        el('span', { text: t('dir.route', { n: index + 1 }) }),
         el('span', {
           text: `${formatDistance((alternateSummary.length || 0) * 1000)} · ${formatDuration(alternateSummary.time || 0)}`,
         }),
       ],
     );
-  });
+  }) : [];
 
   return el('div', { class: 'card' }, [
     el('div', { class: 'route__summary' }, [
@@ -355,6 +357,16 @@ export function renderRoute(response, handlers) {
           text: `${response.nicanav.closures_applied} cierre(s) evitado(s)`,
         })
       : null,
+    response.nicanav?.closures_status === 'unavailable'
+      ? el('div', { class: 'card__note', role: 'status', text: t('dir.closuresUnavailable') })
+      : null,
+    handlers.onAvoidUnpavedChange ? el('label', { class: 'setting' }, [
+      el('input', {
+        type: 'checkbox', checked: handlers.avoidUnpaved,
+        onChange: (event) => handlers.onAvoidUnpavedChange(event.target.checked),
+      }),
+      el('span', { text: t('dir.avoidUnpaved') }),
+    ]) : null,
     actionRow([{ label: t('dir.start'), icon: 'directions', primary: true, onClick: handlers.onStart }]),
     ...alternateButtons,
     steps,
@@ -367,7 +379,11 @@ export function renderRoute(response, handlers) {
  * @param {{lat: number, lon: number, name?: string}} destination
  * @param {any} context the shared app context from map.js
  */
+let directionsRequest = null;
+
 export async function openDirections(destination, context) {
+  directionsRequest?.abort();
+  const controller = directionsRequest = new AbortController();
   let fix = context.getPosition ? context.getPosition() : null;
   if (!fix && context.requestPosition) {
     try {
@@ -380,29 +396,44 @@ export async function openDirections(destination, context) {
     toast(t('dir.noPosition'), { kind: 'error' });
     return null;
   }
+  if (controller.signal.aborted) return null;
 
-  sheet.open(el('div', { class: 'card' }, [spinner(t('dir.calculating'))]), { title: t('dir.title') });
+  const sheetOptions = { title: t('dir.title'), onClose: () => controller.abort() };
+  sheet.open(el('div', { class: 'card' }, [spinner(t('dir.calculating'))]), sheetOptions);
   try {
+    const routeOptions = {
+      costing: 'auto', avoid_unpaved: context.avoidUnpaved ?? readAvoidUnpaved(), language: 'es-ES',
+    };
     const response = await api.route({
+      ...routeOptions,
       locations: [
         { lat: fix.lat, lon: fix.lon },
         { lat: destination.lat, lon: destination.lon },
       ],
-      costing: 'auto',
       alternates: 2,
-      avoid_unpaved: readAvoidUnpaved(),
-      language: 'es-ES',
-    });
+    }, { signal: controller.signal });
+    if (controller.signal.aborted) return null;
 
-    const shape = (response.trip?.legs || []).map((leg) => leg.shape).filter(Boolean)[0];
-    if (shape && context.map) context.map.showRoute(shape, { fit: true });
-
-    sheet.open(
-      renderRoute(response, { onStart: () => beginNavigation(response, destination, context) }),
-      { title: t('dir.title') },
-    );
+    const choose = (active) => {
+      const selected = [response, ...(response.alternates || [])][active];
+      const chosen = { ...selected, nicanav: response.nicanav };
+      const shape = chosen.trip?.legs?.[0]?.shape;
+      if (shape && context.map) context.map.showRoute(shape, { fit: true });
+      sheet.open(renderRoute(response, {
+        active,
+        onPickAlternate: choose,
+        avoidUnpaved: routeOptions.avoid_unpaved,
+        onAvoidUnpavedChange: (value) => {
+          try { localStorage.setItem(AVOID_UNPAVED_KEY, value ? '1' : '0'); } catch { /* optional */ }
+          openDirections(destination, { ...context, avoidUnpaved: value });
+        },
+        onStart: () => beginNavigation(chosen, destination, context, routeOptions),
+      }), sheetOptions);
+    };
+    choose(0);
     return response;
   } catch (error) {
+    if (controller.signal.aborted) return null;
     const message = (error && error.message) || t('dir.failed');
     sheet.open(el('div', { class: 'card' }, [errorBlock(message)]), { title: t('dir.title') });
     return null;
@@ -432,7 +463,7 @@ function readAvoidUnpaved() {
  * Navigation is a large chunk of code that most sessions never use: somebody
  * checking whether a fritanga is open should not pay for it.
  */
-async function beginNavigation(response, destination, context) {
+async function beginNavigation(response, destination, context, routeOptions) {
   try {
     const nav = await import('./nav.js');
     sheet.close();
@@ -440,6 +471,7 @@ async function beginNavigation(response, destination, context) {
       map: context.map,
       route: response,
       destination: { lat: destination.lat, lon: destination.lon },
+      routeOptions,
       onEnd: () => context.map && context.map.clearRoute(),
     });
   } catch (error) {

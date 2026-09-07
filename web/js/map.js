@@ -213,12 +213,25 @@ export async function createMap(options) {
 
   const night = options.night ?? isNight();
   const styleUrl = night && CONFIG.styleUrlNight ? CONFIG.styleUrlNight : CONFIG.styleUrl;
+  let initialStyle = styleUrl;
+  let offlineModule = null;
+  let onlineStyle = null;
+  if (navigator.onLine === false) {
+    offlineModule = await import('./offline.js');
+    const response = await fetch(styleUrl);
+    if (!response.ok) throw new Error('No está guardado el estilo del mapa');
+    onlineStyle = await response.json();
+    let available = false;
+    try { available = await offlineModule.activateOffline(); } catch { /* storage unavailable */ }
+    const { offlineStyle } = await import('./offline-style.js');
+    initialStyle = offlineStyle(onlineStyle, available);
+  }
 
   let map;
   try {
     map = new maplibregl.Map({
       container: options.container,
-      style: styleUrl,
+      style: initialStyle,
       center: options.center || CONFIG.center,
       zoom: options.zoom ?? CONFIG.zoom,
       maxZoom: CONFIG.maxZoom,
@@ -238,6 +251,8 @@ export async function createMap(options) {
     // a map when the device cannot provide it.
     throw new Error(`map init failed: ${error && error.message ? error.message : error}`);
   }
+
+  if (offlineModule) offlineModule.rememberOnlineStyle(map, onlineStyle);
 
   /** @type {Map<string, any>} */
   const markers = new Map();
@@ -663,6 +678,7 @@ function offlineRow(controller) {
 
   const row = el('div', { class: 'setting setting--stacked' }, [
     el('span', { class: 'setting-label', text: 'Mapa sin conexión' }),
+    el('p', { class: 'muted', text: 'El mapa descargado permite ver calles sin señal. Buscar lugares, consultar cierres y calcular rutas nuevas requiere conexión.' }),
     status,
     progress,
     buttons,
@@ -706,7 +722,8 @@ function offlineRow(controller) {
                 await offline.downloadCircle((fraction) => {
                   bar.style.width = `${Math.round(fraction * 100)}%`;
                 });
-                toast('Mapa descargado');
+                const registration = await navigator.serviceWorker?.getRegistration();
+                toast(registration?.active ? 'Mapa descargado' : 'Mapa guardado; la aplicación aún no está lista sin conexión');
                 refresh();
               } catch (error) {
                 toast(String((error && error.message) || error), { kind: 'error' });
@@ -793,6 +810,12 @@ function openSettings(controller, applyTheme) {
 async function bootstrap() {
   const container = document.getElementById('map');
   if (!container) return;
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* no offline shell; everything still works online */
+    });
+  }
 
   sheet.mount();
   document.documentElement.lang = getLanguage();
@@ -917,11 +940,7 @@ async function bootstrap() {
     .catch(() => {
       /* offline tile management is a bonus, never a prerequisite */
     });
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      /* no offline shell; everything still works online */
-    });
-  }
+
 }
 
 /** Re-label the parts of the shell that live in index.html, after a language switch. */

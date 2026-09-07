@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     data_dir: Path = REPO_ROOT / "data"
     tiles_dir: Path = REPO_ROOT / "data" / "tiles"
 
+    metadata_dir: Path = REPO_ROOT / "data" / "metadata"
+
     # --- public surface -------------------------------------------------- #
     public_base_url: str = "http://localhost:8080"
     tiles_base_url: str = "/tiles"
@@ -58,7 +60,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     debug: bool = False
 
-    @field_validator("data_dir", "tiles_dir", mode="before")
+    @field_validator("data_dir", "tiles_dir", "metadata_dir", mode="before")
     @classmethod
     def _expand(cls, value: str | Path) -> Path:
         return Path(str(value)).expanduser()

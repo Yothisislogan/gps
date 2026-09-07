@@ -26,6 +26,12 @@ jobs:
       - name: Install
         run: pip install -r requirements/dev.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build required offline assets
+        run: npm ci --ignore-scripts && npm run build
+
       - name: Lint
         run: |
           ruff check .
@@ -38,7 +44,7 @@ jobs:
         run: pytest -q -m "not network and not docker"
 
   javascript:
-    name: navigation geometry
+    name: navigation and browser logic
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,8 +53,11 @@ jobs:
         with:
           node-version: "22"
 
-      # node --test only; the app itself has no build step and no npm
-      # dependencies, deliberately (docs/PLAN.md section 6.1).
+      - name: Build local browser dependencies
+        run: npm ci --ignore-scripts && npm run build
+
+      - name: Verify offline dependency graph
+        run: node scripts/check_offline_assets.mjs
       - name: Test
         run: node --test "tests/js/*.test.mjs"
 
@@ -92,30 +101,31 @@ jobs:
         run: pip install -r requirements/dev.txt
 
       # Each file is validated by the repository's own loader, so the check
-      # cannot drift from how the code actually reads it. A missing file is a
-      # clear skip rather than a confusing failure.
+      # cannot drift from how the code actually reads it. Missing data fails.
       - name: Validate
-        run: |
-          python3 - <<'PY'
-          import pathlib, sys
+        run: python3 scripts/validate_data.py
 
-          checks = [
-              ("docs/taxonomy.csv", "pipeline.pois.taxonomy", "load_taxonomy"),
-              ("docs/carreteras.csv", "pipeline.geocode.kmpost", "load_highways"),
-              ("docs/golden_routes.json", "pipeline.qa.golden_routes", "load_cases"),
-          ]
-          failed = False
-          for path, module_name, function_name in checks:
-              if not pathlib.Path(path).exists():
-                  print(f"skip {path} (not present)")
-                  continue
-              try:
-                  module = __import__(module_name, fromlist=[function_name])
-                  result = getattr(module, function_name)()
-                  size = len(result[0]) if isinstance(result, tuple) else len(result)
-                  print(f"ok   {path}: {size} entries")
-              except Exception as error:
-                  print(f"FAIL {path}: {error}")
-                  failed = True
-          sys.exit(1 if failed else 0)
-          PY
+  moderation:
+    name: correction publication with PostGIS
+    runs-on: ubuntu-latest
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: nicanav_test
+          POSTGRES_USER: nicanav
+          POSTGRES_PASSWORD: test-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nicanav -d nicanav_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements/dev.txt
+      - name: Test real correction transactions
+        env:
+          NICANAV_TEST_DSN: postgresql://nicanav:test-only-password@localhost:5432/nicanav_test
+        run: pytest -q -m docker tests/test_moderation_postgis.py

@@ -173,7 +173,12 @@ class FakeValhalla:
 
 @pytest.fixture
 def app_and_fakes(tmp_path):
-    settings = Settings(_env_file=None, tiles_dir=tmp_path / "tiles", data_dir=tmp_path)
+    settings = Settings(
+        _env_file=None,
+        tiles_dir=tmp_path / "tiles",
+        data_dir=tmp_path,
+        metadata_dir=tmp_path / "metadata",
+    )
     app = create_app(settings)
     database, meili, valhalla = FakeDatabase(), FakeMeili(), FakeValhalla()
     app.state.db = database
@@ -202,6 +207,25 @@ class TestHealth:
 
     def test_reports_missing_tiles(self, client):
         assert client.get("/api/healthz").json()["tiles"]["base.pmtiles"] is None
+
+    def test_unknown_freshness_is_not_inferred_from_tiles(self, client):
+        body = client.get("/api/healthz").json()
+        assert body["data"]["sources"]["osm"]["status"] == "unknown"
+        assert body["data"]["pipelines"]["nightly"]["status"] == "unknown"
+
+    def test_exposes_recorded_source_and_failed_run(self, client, app_and_fakes):
+        from pipeline.status import save
+
+        app, *_ = app_and_fakes
+        directory = app.state.settings.metadata_dir
+        save(
+            directory / "osm.json",
+            {"status": "imported", "source_timestamp": "2026-09-01T00:00:00Z"},
+        )
+        save(directory / "nightly.json", {"status": "failed", "stage": "load pois"})
+        body = client.get("/api/healthz").json()["data"]
+        assert body["sources"]["osm"]["source_timestamp"] == "2026-09-01T00:00:00Z"
+        assert body["pipelines"]["nightly"]["status"] == "failed"
 
 
 class TestRoute:
@@ -657,6 +681,31 @@ class TestSubmissions:
 
 
 class TestErrorEnvelope:
+    def test_closure_outage_does_not_look_like_zero_known_closures(
+        self, client, app_and_fakes, monkeypatch
+    ):
+        _, database, _, _ = app_and_fakes
+
+        async def unavailable():
+            raise RuntimeError("database unavailable")
+
+        monkeypatch.setattr(database, "active_closures", unavailable)
+        response = client.post(
+            "/api/route",
+            json={"locations": [{"lat": 12.12, "lon": -86.26}, {"lat": 12.1, "lon": -86.25}]},
+        )
+        assert response.status_code == 200
+        assert response.json()["nicanav"]["closures_status"] == "unavailable"
+
+    def test_forwarded_header_cannot_reset_a_client_rate_limit(self, client, app_and_fakes):
+        app, *_ = app_and_fakes
+        app.state.settings.rate_limit_report = "1/minute"
+        payload = {"kind": "bache", "lat": 12.1, "lon": -86.2}
+        first = client.post("/api/report", json=payload, headers={"X-Forwarded-For": "1.2.3.4"})
+        second = client.post("/api/report", json=payload, headers={"X-Forwarded-For": "5.6.7.8"})
+        assert first.status_code == 200
+        assert second.status_code == 429
+
     def test_every_error_uses_the_same_shape(self, client):
         for response in (
             client.get("/api/poi/00000000-0000-0000-0000-000000000000"),

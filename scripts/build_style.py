@@ -319,7 +319,10 @@ def build_style(palette: Palette, *, name: str, tiles_base: str = "/tiles") -> d
             },
             "pois": {"type": "vector", "url": f"pmtiles://{tiles_base}/pois.pmtiles"},
         },
-        "glyphs": "/fonts/{fontstack}/{range}.pbf",
+        "font-faces": {
+            "Noto Sans " + name: [{"url": f"/vendor/v1/noto-{name.lower()}.woff2"}]
+            for name in ("Regular", "Bold", "Italic")
+        },
         "sprite": "/sprites/nicanav",
         "light": {"anchor": "viewport", "color": "#ffffff", "intensity": 0.3},
         "layers": [

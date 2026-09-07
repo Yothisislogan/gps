@@ -19,6 +19,22 @@ make nightly                    # ~30-60 min the first time: Planetiler stages ~
 make verify                     # the checks that catch silent failures
 ```
 
+Activate the development virtualenv first (`make install` installs its Python
+dependencies). The host also needs OpenSSL. `make up` runs `make prepare`, which
+reads `infra/.env`, renders `web/config.js`, and writes an APR1 password hash to
+`infra/secrets/admin.htpasswd`. Neither generated file belongs in git. The
+secrets directory is mounted read-only in nginx; a directory mount lets an
+atomic replacement become visible without binding nginx to the old inode.
+For direct Compose commands, run `make prepare` first. To rotate the admin
+password, edit `infra/.env` and run `make up` so both API and nginx use it.
+
+The API returns `database_unavailable` with HTTP 503 for database-dependent
+requests during an outage. Failed startup connections are retried on later
+requests/health checks, at most once per five seconds per worker. Routing can
+continue when PostGIS is down, but reports `closures_status: unavailable` and
+the route screen warns that closures could not be checked. This is different
+from a successful lookup with no active closures.
+
 Then work the **first-deploy checklist** in §7. It exists because this codebase
 was written without network access to any of the external services, so a set of
 assumptions has never met reality. They are marked in the source:
@@ -150,6 +166,19 @@ golden route so it cannot come back.
 ## 7. First-deploy checklist
 
 Work through these once, on the real box, with real services:
+
+- [ ] **Regression suite**: `make check` passes. See
+      [the prioritized improvement list](IMPROVEMENTS.md) for remaining work.
+- [ ] **Admin setup**: `/admin` challenges unauthenticated requests, generated
+      credentials work, responses use `Cache-Control: no-store`, and cross-site
+      form submissions fail. Verify the trusted client IP configuration if an
+      additional reverse proxy sits in front of nginx.
+- [ ] **Recovery**: stop and restart PostGIS without restarting the API; check
+      that database features recover and closure-status reporting changes back
+      from unavailable to checked.
+- [ ] **Offline restart**: test from a fresh browser after downloading the map.
+      Cross-origin renderer dependencies are not yet precached; an already warm
+      browser cache is not proof that offline startup works.
 
 - [ ] `make verify` passes end to end.
 - [ ] **Tiles**: a `Range` request returns **206**, with `Content-Range`, a
