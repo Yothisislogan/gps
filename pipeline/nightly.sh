@@ -87,7 +87,19 @@ fi
 # QA runs last and does not gate publication: the artifacts are already live, so
 # what these produce is a verdict on them, not a gate. A red golden-route run is
 # the signal to roll back, which the runbook documents.
-step "golden routes"      py -m pipeline.qa.golden_routes --json
+# --json takes a path. Leaving it bare made argparse exit 2 before a single
+# route was requested, so this step failed every night and the whole build
+# reported failure while everything it published was fine.
+QA_DIR="${DATA_DIR}/qa"
+mkdir -p "$QA_DIR"
+# Last night's results become tonight's baseline, so the log says what moved.
+# The two paths must differ: main() writes the JSON before it reads the
+# baseline, and pointed at one file the run would diff against itself.
+[ -f "${QA_DIR}/golden-nightly.json" ] \
+  && mv -f "${QA_DIR}/golden-nightly.json" "${QA_DIR}/golden-prev.json"
+step "golden routes"      py -m pipeline.qa.golden_routes \
+                            --json "${QA_DIR}/golden-nightly.json" \
+                            --baseline "${QA_DIR}/golden-prev.json"
 step "kpis"               py -m pipeline.qa.kpis
 
 ELAPSED=$(( $(date -u +%s) - STARTED ))
