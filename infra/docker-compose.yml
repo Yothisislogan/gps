@@ -16,7 +16,7 @@ services:
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
-      - "${NICANAV_HTTP_PORT:-8080}:80"
+      - "127.0.0.1:${NICANAV_HTTP_PORT:-8400}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ../web:/srv/web:ro
@@ -67,7 +67,7 @@ services:
       # referenced from valhalla.json; leaving this True would have the entrypoint
       # download the upstream table over it on every start.
       use_default_speeds_config: "False"
-      server_threads: "${NICANAV_VALHALLA_THREADS:-2}"
+      server_threads: "${NICANAV_VALHALLA_THREADS:-6}"
     healthcheck:
       # /status is cheap; the verbose form is not, and is disabled by default.
       # It answers 402 while draining, which is exactly the "stop sending work"
@@ -104,8 +104,13 @@ services:
       POSTGRES_DB: "${NICANAV_PG_DB:-nicanav}"
       POSTGRES_USER: "${NICANAV_PG_USER:-nicanav}"
       POSTGRES_PASSWORD: "${NICANAV_PG_PASSWORD:?set NICANAV_PG_PASSWORD in .env}"
-      # Spanish collation for correct ordering of names with accents.
-      LANG: es_NI.utf8
+      # No LANG here. Setting a locale the image does not carry (es_NI.utf8 is
+      # not generated in the Debian-based postgis image) makes initdb fail with
+      # "invalid locale settings", which leaves the data directory empty, the
+      # container restarting, and the healthcheck failing forever. Ordering of
+      # accented names does not depend on it either: every comparison in this
+      # schema goes through nicanav_normalize(), which accent-folds first.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes:
       - pg_data:/var/lib/postgresql/data
       # Numbered migrations run in order on an empty data directory.
@@ -127,7 +132,15 @@ services:
       NICANAV_VALHALLA_URL: "http://valhalla:8002"
       NICANAV_MEILI_URL: "http://meilisearch:7700"
       NICANAV_MEILI_KEY: "${NICANAV_MEILI_KEY}"
-      NICANAV_DATABASE_URL: "postgresql://${NICANAV_PG_USER:-nicanav}:${NICANAV_PG_PASSWORD}@postgis:5432/${NICANAV_PG_DB:-nicanav}"
+      # Parts, not a URL. A generated password routinely contains `/` or `+`
+      # (base64) or `$` (which Compose interpolates), and any of them silently
+      # corrupts a postgresql:// URL. common/config.py composes the DSN and
+      # percent-encodes the password exactly once.
+      NICANAV_PG_HOST: postgis
+      NICANAV_PG_PORT: "5432"
+      NICANAV_PG_DB: "${NICANAV_PG_DB:-nicanav}"
+      NICANAV_PG_USER: "${NICANAV_PG_USER:-nicanav}"
+      NICANAV_PG_PASSWORD: "${NICANAV_PG_PASSWORD:?set NICANAV_PG_PASSWORD in .env}"
       NICANAV_TILES_DIR: /srv/tiles
       NICANAV_PUBLIC_BASE_URL: "${NICANAV_PUBLIC_BASE_URL:-http://localhost:8080}"
       NICANAV_CORS_ORIGINS: "${NICANAV_CORS_ORIGINS:-*}"
@@ -159,7 +172,11 @@ services:
       NICANAV_VALHALLA_URL: "http://valhalla:8002"
       NICANAV_MEILI_URL: "http://meilisearch:7700"
       NICANAV_MEILI_KEY: "${NICANAV_MEILI_KEY}"
-      NICANAV_DATABASE_URL: "postgresql://${NICANAV_PG_USER:-nicanav}:${NICANAV_PG_PASSWORD}@postgis:5432/${NICANAV_PG_DB:-nicanav}"
+      NICANAV_PG_HOST: postgis
+      NICANAV_PG_PORT: "5432"
+      NICANAV_PG_DB: "${NICANAV_PG_DB:-nicanav}"
+      NICANAV_PG_USER: "${NICANAV_PG_USER:-nicanav}"
+      NICANAV_PG_PASSWORD: "${NICANAV_PG_PASSWORD:?set NICANAV_PG_PASSWORD in .env}"
       NICANAV_DATA_DIR: /data
       NICANAV_TILES_DIR: /data/tiles
     volumes:

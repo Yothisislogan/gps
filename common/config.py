@@ -12,8 +12,9 @@ from __future__ import annotations
 import functools
 import os
 from pathlib import Path
+from urllib.parse import quote
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +35,20 @@ class Settings(BaseSettings):
     meili_url: str = "http://meilisearch:7700"
     meili_key: str = ""
     meili_index: str = "nicanav"
-    database_url: str = "postgresql://nicanav:nicanav@postgis:5432/nicanav"
+
+    # --- database ---------------------------------------------------------- #
+    # The DSN is composed from parts rather than passed in whole, because a
+    # generated password routinely contains characters that a URL cannot carry
+    # raw: `openssl rand -base64 32` emits `/` and `+`, and a `/` silently
+    # truncates a postgresql:// URL at the database name. Composing here means
+    # the password is percent-encoded exactly once, by code that knows it is a
+    # password. Set NICANAV_DATABASE_URL explicitly to override.
+    database_url: str = ""
+    pg_host: str = "postgis"
+    pg_port: int = 5432
+    pg_db: str = "nicanav"
+    pg_user: str = "nicanav"
+    pg_password: str = "nicanav"
 
     # --- filesystem ------------------------------------------------------ #
     data_dir: Path = REPO_ROOT / "data"
@@ -57,6 +71,17 @@ class Settings(BaseSettings):
     default_language: str = "es-ES"
     log_level: str = "INFO"
     debug: bool = False
+
+    @model_validator(mode="after")
+    def _compose_database_url(self) -> Settings:
+        """Fill in ``database_url`` from the parts when it was not given."""
+        if not self.database_url:
+            password = quote(self.pg_password, safe="")
+            user = quote(self.pg_user, safe="")
+            self.database_url = (
+                f"postgresql://{user}:{password}@{self.pg_host}:{self.pg_port}/{self.pg_db}"
+            )
+        return self
 
     @field_validator("data_dir", "tiles_dir", mode="before")
     @classmethod
