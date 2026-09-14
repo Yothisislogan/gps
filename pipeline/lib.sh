@@ -12,7 +12,8 @@ OSM_DIR="${DATA_DIR}/osm"
 EXPORT_DIR="${DATA_DIR}/exports"
 METADATA_DIR="${NICANAV_METADATA_DIR:-${DATA_DIR}/metadata}"
 VALHALLA_DIR="${NICANAV_VALHALLA_DIR:-${DATA_DIR}/valhalla}"
-COMPOSE_FILE="${REPO_ROOT}/infra/docker-compose.yml"
+COMPOSE_FILE="${NICANAV_COMPOSE_FILE:-${REPO_ROOT}/infra/docker-compose.yml}"
+COMPOSE_ENV_FILE="${NICANAV_ENV_FILE:-${REPO_ROOT}/infra/.env}"
 
 GEOFABRIK_URL="${NICANAV_GEOFABRIK_URL:-https://download.geofabrik.de/central-america/nicaragua-latest.osm.pbf}"
 PLANETILER_JAR="${PLANETILER_JAR:-${DATA_DIR}/tools/planetiler.jar}"
@@ -27,6 +28,9 @@ require() {
 }
 
 ensure_dirs() {
+  if [ "${NICANAV_MANAGED_RELEASE:-0}" = 1 ] && [ "${NICANAV_CANDIDATE:-0}" != 1 ]; then
+    die "managed data must be refreshed through scripts/releases.py"
+  fi
   mkdir -p "$OSM_DIR" "$TILES_DIR" "$EXPORT_DIR" "$VALHALLA_DIR" "${DATA_DIR}/tools" "${DATA_DIR}/backups" "$METADATA_DIR"
 }
 
@@ -73,7 +77,7 @@ wait_for_http() {
   log "ready: ${url}"
 }
 
-compose() { docker compose -f "$COMPOSE_FILE" --env-file "${REPO_ROOT}/infra/.env" "$@"; }
+compose() { docker compose -f "$COMPOSE_FILE" --env-file "$COMPOSE_ENV_FILE" "$@"; }
 
 # The lock is held by callers for the complete refresh. EXIT records failures,
 # including signals; a killed process leaves "running" rather than fake success.

@@ -1,0 +1,9 @@
+[Unit]
+Description=Build and validate a NicaNav candidate daily
+[Timer]
+OnCalendar=*-*-* 02:15:00 America/Managua
+RandomizedDelaySec=10m
+Persistent=true
+Unit=nicanav-managed@refresh.service
+[Install]
+WantedBy=timers.target

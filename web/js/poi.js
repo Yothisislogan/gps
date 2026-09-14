@@ -291,21 +291,23 @@ function favoriteActions(place) {
   } }));
 }
 
-export function choosePoint(context, place, onConfirm) {
+export function choosePoint(context, place, onConfirm, origin = false) {
   if (!context.map) { toast(t('map.loading')); return; }
-  const map = context.map.map;
+  const owner = context.map;
+  const map = owner.map;
+  const label = t(origin ? 'dir.confirmOrigin' : 'poi.confirm');
   if (place && Number.isFinite(place.lat)) context.map.flyTo(place.lat, place.lon, { duration: 0 });
   context.pickPoint = true;
   const update = () => {
     const centre = map.getCenter();
-    context.map.setMarker('confirm', centre.lat, centre.lng, { kind: 'selected', title: t('poi.confirm') });
+    owner.setMarker('confirm', centre.lat, centre.lng, { kind: 'selected', title: label });
   };
-  const cleanup = () => { map.off('move', update); context.map.setMarker('confirm', null, null); context.pickPoint = false; };
+  const cleanup = () => { map.off('move', update); owner.setMarker('confirm', null, null); context.pickPoint = false; };
   map.on('move', update);
   update();
   sheet.open(el('div', { class: 'card' }, [
-    el('p', { text: t('poi.adjustHint') }),
-    actionRow([{ label: t('poi.confirm'), icon: 'check', primary: true, onClick: () => {
+    el('p', { text: t(origin ? 'dir.originHint' : 'poi.adjustHint') }),
+    actionRow([{ label, icon: 'check', primary: true, onClick: () => {
       const centre = map.getCenter();
       const selected = { ...place, lat: centre.lat, lon: centre.lng, confirmed: true };
       sheet.close();
@@ -447,7 +449,7 @@ export async function openDirections(destination, context) {
     sheet.open(el('div', { class: 'card' }, [
       el('p', { text: t('dir.noPositionHint') }),
       actionRow([{ label: t('dir.manual'), icon: 'pin', primary: true, onClick: () =>
-        choosePoint(context, destination, origin => openDirections(destination, { ...context, origin })) }]),
+        choosePoint(context, destination, origin => openDirections(destination, { ...context, origin }), true) }]),
       errorBlock(t('dir.noPosition'), () => openDirections(destination, context)),
     ]), sheetOptions);
     return null;

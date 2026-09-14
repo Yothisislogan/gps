@@ -110,3 +110,26 @@ def test_failed_load_rolls_back_earlier_clusters(db):
     with pytest.raises(ValueError):
         load([*features, bad], DSN)
     assert db.execute("SELECT count(*) FROM poi").fetchone()[0] == 0
+
+
+def test_publication_revision_changes_with_edits_but_not_empty_updates_or_reads(db):
+    def revision():
+        return db.execute("SELECT revision FROM release_revision WHERE id=1").fetchone()[0]
+
+    before = revision()
+    db.execute("SELECT count(*) FROM poi")
+    db.execute("UPDATE poi SET name='unused' WHERE false")
+    db.execute("INSERT INTO search_log(q,hits) VALUES ('test', 0)")
+    assert revision() == before
+    features = [p.as_feature() for p in conflate(records()[:1]).merged]
+    load(features, DSN)
+    after_import = revision()
+    assert after_import > before
+    db.execute("UPDATE poi SET name='New human correction'")
+    assert revision() > after_import
+    # A rejected transaction must not invalidate a valid candidate snapshot.
+    before_rollback = revision()
+    with pytest.raises(RuntimeError), db.transaction():
+        db.execute("UPDATE poi SET name='Rolled back'")
+        raise RuntimeError("undo")
+    assert revision() == before_rollback

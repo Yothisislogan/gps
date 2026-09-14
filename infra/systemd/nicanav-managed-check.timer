@@ -1,0 +1,8 @@
+[Unit]
+Description=Check NicaNav dependencies, ranges, search and routing
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=15m
+Unit=nicanav-managed@check.service
+[Install]
+WantedBy=timers.target

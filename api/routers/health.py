@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 
 from api.clients.db import Database
 from api.clients.meili import MeiliClient
@@ -72,3 +73,12 @@ def _tiles_status(settings: Settings) -> dict[str, Any]:
         else:
             out[name] = None
     return out
+
+
+@router.get("/readyz")
+async def readyz(request: Request, settings: Settings = Depends(get_settings_dep)):
+    payload = await healthz(request, settings)
+    ready = all(payload[name]["ok"] for name in ("valhalla", "meili", "db"))
+    return JSONResponse(
+        payload, status_code=200 if ready else 503, headers={"Cache-Control": "no-store"}
+    )

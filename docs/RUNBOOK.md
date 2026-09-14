@@ -4,9 +4,10 @@ Operating the stack on one box. Written for the person who is on call, which for
 a while is the person who wrote it. [docs/SERVER.md](SERVER.md) is the companion:
 what runs where, which ports, which paths, and how to redeploy or roll back.
 
-The governing rule everywhere below: **stale beats wrong.** A day-old map is a
-minor annoyance; a half-built one sends drivers into a wall. Every job publishes
-atomically and every failure path leaves yesterday's data serving.
+For the mobile release, use [MOBILE-DEPLOYMENT.md](MOBILE-DEPLOYMENT.md). It
+documents staged generations, the required adoption drill and managed jobs. The
+legacy steps below replace individual artifacts atomically, but do not provide a
+coordinated cross-service release. They are suitable for initial private builds.
 
 ---
 
@@ -14,7 +15,7 @@ atomically and every failure path leaves yesterday's data serving.
 
 ```bash
 cp infra/.env.example infra/.env
-$EDITOR infra/.env              # generate secrets: openssl rand -base64 32
+$EDITOR infra/.env              # generate secrets: openssl rand -hex 24
 make up                         # nginx, valhalla, meilisearch, postgis, api
 make nightly                    # ~30-60 min the first time: Planetiler stages ~1 GB of sources
 make verify                     # the checks that catch silent failures

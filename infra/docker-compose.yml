@@ -1,9 +1,8 @@
 # nicanav on one box.
 #
-# Sizing note from docs/PLAN.md: the whole stack for a Nicaragua-sized dataset
-# fits in well under 2 GB of RAM. The heavy artifacts (base.pmtiles,
-# pois.pmtiles, the Valhalla graph) are files on disk served or memory-mapped,
-# not processes.
+# Serving and rebuilding have different memory requirements. Start staging at
+# 4 vCPU / 8 GB; use a separate builder or more RAM for two isolated generations.
+# Measure peak memory and phone latency with real Nicaragua data before launch.
 #
 #   docker compose --env-file .env up -d
 #
@@ -20,7 +19,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./secrets:/etc/nginx/nicanav:ro
-      - ../web:/srv/web:ro
+      - ${NICANAV_WEB_DIR:-../dist/web}:/srv/web:ro
       # Tiles are served straight off disk with byte-range requests. Read-only:
       # nginx must never be able to damage a published archive.
       - ${NICANAV_TILES_DIR:-../data/tiles}:/srv/tiles:ro
@@ -38,9 +37,11 @@ services:
     # main Valhalla repo. Pinned deliberately — a routing engine that changes
     # under you is a regression you find while driving.
     image: ghcr.io/valhalla/valhalla-scripted:3.8.3
+    mem_limit: ${NICANAV_VALHALLA_MEMORY:-4g}
+    cpus: ${NICANAV_VALHALLA_CPUS:-2}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8002:8002"
+      - "127.0.0.1:${NICANAV_VALHALLA_PORT:-8002}:8002"
     volumes:
       - ${NICANAV_VALHALLA_DIR:-../data/valhalla}:/custom_files
     environment:
@@ -81,13 +82,17 @@ services:
 
   meilisearch:
     image: getmeili/meilisearch:v1.24
+    mem_limit: ${NICANAV_MEILI_MEMORY:-2g}
+    cpus: ${NICANAV_MEILI_CPUS:-1}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:7700:7700"
+      - "127.0.0.1:${NICANAV_MEILI_PORT:-7700}:7700"
     environment:
       MEILI_MASTER_KEY: "${NICANAV_MEILI_KEY:?set NICANAV_MEILI_KEY in .env}"
       MEILI_ENV: production
       MEILI_NO_ANALYTICS: "true"
+      MEILI_MAX_INDEXING_MEMORY: "${NICANAV_MEILI_INDEX_MEMORY:-512MiB}"
+      MEILI_MAX_INDEXING_THREADS: "1"
     volumes:
       - meili_data:/meili_data
     healthcheck:
@@ -100,7 +105,7 @@ services:
     image: postgis/postgis:17-3.5
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${NICANAV_PG_BIND_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: "${NICANAV_PG_DB:-nicanav}"
       POSTGRES_USER: "${NICANAV_PG_USER:-nicanav}"
@@ -149,6 +154,8 @@ services:
       NICANAV_ADMIN_USER: "${NICANAV_ADMIN_USER:-admin}"
       NICANAV_ADMIN_PASSWORD: "${NICANAV_ADMIN_PASSWORD:?set NICANAV_ADMIN_PASSWORD in .env}"
       NICANAV_MAPILLARY_TOKEN: "${NICANAV_MAPILLARY_TOKEN:-}"
+      NICANAV_RELEASE_STATE_DIR: "${NICANAV_RELEASE_STATE_MOUNT:-}"
+      NICANAV_RELEASE_ID: "${NICANAV_RELEASE_ID:-}"
       NICANAV_LOG_LEVEL: "${NICANAV_LOG_LEVEL:-INFO}"
     volumes:
       - ${NICANAV_TILES_DIR:-../data/tiles}:/srv/tiles:ro

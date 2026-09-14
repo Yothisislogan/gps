@@ -472,7 +472,7 @@ export async function createMap(options) {
         return existing;
       }
       const kind = markerOptions.kind || 'result';
-      const element = el('div', { class: `marker marker--${kind}`, role: 'button', tabindex: '0' }, [
+      const element = el('div', { class: `marker marker--${kind}`, role: markerOptions.onClick ? 'button' : 'img', tabindex: markerOptions.onClick ? '0' : '-1' }, [
         el('span', { class: 'marker-dot', 'aria-hidden': 'true' }),
         markerOptions.label ? el('span', { class: 'marker-label', text: markerOptions.label }) : null,
       ]);

@@ -24,7 +24,7 @@ echo "== tiles: byte-range serving =="
 # The PMTiles failure mode: with gzip on, nginx answers 200 with the whole
 # archive, chunked, no Content-Length, weak ETag — and pmtiles.js reports what
 # looks like a client bug. These three headers are the difference.
-HEADERS="$(curl -sS -D - -o /dev/null -r 0-1023 "${BASE}/tiles/base.pmtiles" 2>/dev/null || true)"
+HEADERS="$(curl --connect-timeout 5 --max-time 30 -sS -D - -o /dev/null -r 0-1023 "${BASE}/tiles/base.pmtiles" 2>/dev/null || true)"
 if printf '%s' "$HEADERS" | grep -qi '^HTTP/[0-9.]* 206'; then
   pass "206 Partial Content"
 else
@@ -50,7 +50,7 @@ echo "== routing: Spanish narration =="
 # An unsupported language tag falls back to en-US silently. A stack that
 # navigates in English for Nicaraguan drivers is a failure nobody's health check
 # would catch.
-ROUTE="$(curl -sS -X POST "${VALHALLA}/route" -H 'Content-Type: application/json' -d '{
+ROUTE="$(curl --connect-timeout 5 --max-time 30 -sS -X POST "${VALHALLA}/route" -H 'Content-Type: application/json' -d '{
   "locations":[{"lat":12.1415,"lon":-86.1682},{"lat":12.1150,"lon":-86.2504}],
   "costing":"auto","language":"es-ES","units":"kilometers"}' 2>/dev/null || true)"
 if [ -z "$ROUTE" ]; then
@@ -60,7 +60,7 @@ elif printf '%s' "$ROUTE" | grep -qiE '"instruction": *"(Drive|Turn|Head|Continu
 elif printf '%s' "$ROUTE" | grep -qiE '"instruction": *"(Conduzca|Gire|Siga|Continúe|Mantén|Tome)'; then
   pass "instructions are in Spanish"
 else
-  note "could not classify the narration language; check by hand"
+  fail "could not verify Spanish narration"
 fi
 
 echo "== routing: the Nicaraguan speed table is loaded =="
@@ -74,7 +74,7 @@ fi
 note "confirm no 'unable to parse' warning: docker compose logs valhalla | grep -i speed"
 
 echo "== routing: the graph is current =="
-STATUS="$(curl -sS "${VALHALLA}/status" 2>/dev/null || true)"
+STATUS="$(curl --connect-timeout 5 --max-time 30 -sS "${VALHALLA}/status" 2>/dev/null || true)"
 MODIFIED="$(printf '%s' "$STATUS" | sed -n 's/.*"tileset_last_modified":[[:space:]]*\([0-9]*\).*/\1/p')"
 if [ -n "$MODIFIED" ]; then
   AGE_DAYS=$(( ( $(date -u +%s) - MODIFIED ) / 86400 ))
@@ -85,19 +85,19 @@ else
 fi
 
 echo "== api =="
-HEALTH="$(curl -sS "${BASE}/api/healthz" 2>/dev/null || true)"
+HEALTH="$(curl --connect-timeout 5 --max-time 30 -sS "${BASE}/api/healthz" 2>/dev/null || true)"
 printf '%s' "$HEALTH" | grep -q '"status": *"ok"' && pass "api healthy" || fail "api unhealthy"
 for dep in valhalla meili db; do
   printf '%s' "$HEALTH" | grep -q "\"${dep}\": *{\"ok\": *true" && pass "${dep} reachable" \
-    || note "${dep} reports not ok (the app degrades, but check it)"
+    || fail "${dep} reports not ready"
 done
 
 echo "== search =="
-SEARCH="$(curl -sS "${BASE}/api/search?q=gasolinera&lat=12.1415&lon=-86.1682" 2>/dev/null || true)"
+SEARCH="$(curl --connect-timeout 5 --max-time 30 -sS "${BASE}/api/search?q=gasolinera&lat=12.1415&lon=-86.1682" 2>/dev/null || true)"
 printf '%s' "$SEARCH" | grep -q '"hits"' && pass "search responds" || fail "search failed"
 
 echo "== geocoding: the Nicaraguan address grammar =="
-GEO="$(curl -sS --get "${BASE}/api/geocode" --data-urlencode 'q=De la Rotonda El Güegüense, 2c al sur, 1c abajo' 2>/dev/null || true)"
+GEO="$(curl --connect-timeout 5 --max-time 30 -sS --get "${BASE}/api/geocode" --data-urlencode 'q=De la Rotonda El Güegüense, 2c al sur, 1c abajo' 2>/dev/null || true)"
 printf '%s' "$GEO" | grep -q '"relative"' \
   && pass "relative addresses parse" \
   || fail "relative address did not parse — the gazetteer is probably empty"

@@ -6,7 +6,8 @@ import { test } from 'node:test';
 const source = readFileSync(new URL('../../web/sw.js', import.meta.url), 'utf8');
 const origin = 'https://mapa.example.ni';
 
-function worker(fetcher = async () => { throw new TypeError('offline'); }) {
+function worker(fetcher = async () => { throw new TypeError('offline'); }, busyTabs = []) {
+  let activated = 0;
   const listeners = {}, entries = new Map(), timers = [], writes = [];
   const key = (request) => new URL(typeof request === 'string' ? request : request.url, origin).href;
   const cache = {
@@ -14,13 +15,15 @@ function worker(fetcher = async () => { throw new TypeError('offline'); }) {
     put: async (request, response) => { writes.push(key(request)); entries.set(key(request), response); },
   };
   vm.runInNewContext(source, {
-    self: { location: { origin }, addEventListener: (name, fn) => { listeners[name] = fn; } },
+    self: { clients: { matchAll: async () => busyTabs.map(busy => ({postMessage: (_message, ports) => { ports[0].postMessage({ busy }); ports[0].close(); }})) }, skipWaiting: async () => { activated++; }, location: { origin }, addEventListener: (name, fn) => { listeners[name] = fn; } },
     caches: { ...cache, open: async () => cache },
-    fetch: fetcher, URL, Request, Response,
+    fetch: fetcher, URL, Request, Response, MessageChannel,
     setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout() {},
   });
   return {
     entries, writes, timers,
+    get activated() { return activated; },
+    activate() { let pending; listeners.message({data: 'activate-update', waitUntil: task => { pending = task; }}); return pending; },
     get(path, { mode = 'cors', headers = {} } = {}) {
       let response;
       const pending = [];
@@ -105,4 +108,17 @@ test('installed shell returns immediately without contacting a stalled network',
   assert.equal(await (await sw.get('/js/map.js').response).text(), 'installed module');
   assert.equal(requests, 0);
   assert.equal(sw.timers.length, 0);
+});
+
+
+test('a trip in any tab blocks service-worker activation', async () => {
+  const sw = worker(undefined, [false, true]);
+  await sw.activate();
+  assert.equal(sw.activated, 0);
+});
+
+test('an explicitly accepted update activates when every tab is idle', async () => {
+  const sw = worker(undefined, [false, false]);
+  await sw.activate();
+  assert.equal(sw.activated, 1);
 });

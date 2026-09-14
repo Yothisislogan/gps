@@ -716,3 +716,13 @@ class TestErrorEnvelope:
             assert set(body) == {"error"}
             assert isinstance(body["error"]["code"], str)
             assert isinstance(body["error"]["message"], str)
+
+
+def test_readiness_fails_when_a_required_dependency_is_down(client, app_and_fakes):
+    _, _, meili, _ = app_and_fakes
+    assert client.get("/api/readyz").status_code == 200
+    meili.fail = True
+    response = client.get("/api/readyz")
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "no-store"
+    assert client.get("/api/healthz").status_code == 200

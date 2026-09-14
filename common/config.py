@@ -56,6 +56,9 @@ class Settings(BaseSettings):
 
     metadata_dir: Path = REPO_ROOT / "data" / "metadata"
 
+    release_state_dir: Path | None = None
+    release_id: str = ""
+
     # --- public surface -------------------------------------------------- #
     public_base_url: str = "http://localhost:8400"
     tiles_base_url: str = "/tiles"
@@ -73,6 +76,11 @@ class Settings(BaseSettings):
     default_language: str = "es-ES"
     log_level: str = "INFO"
     debug: bool = False
+
+    @field_validator("release_state_dir", mode="before")
+    @classmethod
+    def _optional_state(cls, value):
+        return value or None
 
     @model_validator(mode="after")
     def _compose_database_url(self) -> Settings:

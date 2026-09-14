@@ -304,12 +304,13 @@ export function autoSwitchOnConnectivity(map) {
       useOfflineSource(map, false);
     }
   };
-  window.addEventListener('online', update);
-  window.addEventListener('offline', update);
-  update().catch(() => {});
+  const schedule = () => update().catch(() => {});
+  window.addEventListener('online', schedule);
+  window.addEventListener('offline', schedule);
+  schedule();
   return () => {
     disposed = true;
-    window.removeEventListener('online', update);
-    window.removeEventListener('offline', update);
+    window.removeEventListener('online', schedule);
+    window.removeEventListener('offline', schedule);
   };
 }

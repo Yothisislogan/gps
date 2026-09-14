@@ -21,6 +21,7 @@ from api.clients.db import Database
 from api.clients.meili import MeiliClient
 from api.deps import RateLimiter
 from api.errors import install_error_handlers
+from api.publication import PublicationGuard
 from api.routers import admin, geocode, health, poi, route, search, submissions
 from common.config import Settings, get_settings
 from common.valhalla import AsyncValhallaClient
@@ -86,6 +87,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.add_middleware(
+        PublicationGuard, directory=settings.release_state_dir, release_id=settings.release_id
+    )
     install_error_handlers(app)
 
     for module in (health, search, geocode, poi, route, submissions):

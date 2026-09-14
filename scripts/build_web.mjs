@@ -1,7 +1,7 @@
 // Package a release without changing the editable web sources. Old asset URLs
 // remain valid while an open tab finishes a trip on the previous release.
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, mkdir, readdir, copyFile, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { join } from 'node:path';
 const root = 'web', output = 'dist/web';
@@ -11,12 +11,18 @@ async function walk(path) {
   return files.flat().sort();
 }
 const sources = (await walk(root)).filter(p => p !== 'web/config.js');
-const digest = createHash('sha256');
+const generation = process.env.NICANAV_RELEASE_ID || '';
+if (generation && !/^[a-z0-9-]+$/.test(generation)) throw new Error('Invalid data release ID');
+const dataPrefix = generation ? `/data-releases/${generation}` : '';
+const digest = createHash('sha256').update(generation);
+digest.update(await readFile(new URL(import.meta.url)));
+let runtimeConfig = await readFile('web/config.js', 'utf8').catch(() => 'window.NICANAV_CONFIG = {};\n');
+digest.update(runtimeConfig);
 for (const path of sources) digest.update(path).update(await readFile(path));
 const version = digest.digest('hex').slice(0, 20);
 const prefix = `/releases/${version}`;
 const assets = sources.filter(p => !['web/index.html', 'web/sw.js', 'web/manifest.webmanifest'].includes(p));
-const rewrite = text => text.replace(/(?<=["'`(])\/(js|css|vendor|style|sprites|icons)\//g, `${prefix}/$1/`);
+const rewrite = text => text.replace(/pmtiles:\/\/\/tiles\//g, `pmtiles://${dataPrefix}/tiles/`).replace(/(?<=["'`(])\/(js|css|vendor|style|sprites|icons)\//g, `${prefix}/$1/`);
 await mkdir(output, { recursive: true });
 let compressedBytes = 0;
 for (const path of assets) {
@@ -35,7 +41,8 @@ await writeFile(`${output}/index.html`, rewrite(await readFile('web/index.html',
 await writeFile(`${output}/manifest.webmanifest`, rewrite(await readFile('web/manifest.webmanifest', 'utf8')));
 const worker = rewrite(await readFile('web/sw.js', 'utf8')).replace(/const VERSION = '[^']+';/, `const VERSION = '${version}';`);
 await writeFile(`${output}/sw.js`, worker);
-try { await copyFile('web/config.js', `${output}/config.js`); }
-catch (error) { if (error.code !== 'ENOENT') throw error; await writeFile(`${output}/config.js`, 'window.NICANAV_CONFIG = {};\n'); }
+await writeFile(`${output}/config.js`, rewrite(runtimeConfig));
 await writeFile(`${output}/release.json`, JSON.stringify({ version, assetPrefix: prefix, assets: assets.length, compressedBytes }, null, 2));
 console.log(`Packaged web release ${version} (${Math.round(compressedBytes / 1024)} KiB compressed assets, excluding map archives).`);
+
+if (compressedBytes > 900 * 1024) throw new Error('Offline shell exceeds the 900 KiB gzip budget; inspect new dependencies.');

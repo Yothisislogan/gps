@@ -1,0 +1,24 @@
+# Instance names: refresh, backup, expire, check. Enable only after a staging drill.
+[Unit]
+Description=NicaNav managed %i
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=nicanav-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nicanav
+Environment=PATH=/opt/nicanav/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/nicanav/.venv/bin/python scripts/releases.py %i
+TimeoutStartSec=4h
+Nice=10
+IOSchedulingClass=idle
+CPUWeight=50
+MemoryAccounting=yes
+User=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+StandardOutput=journal
+StandardError=journal

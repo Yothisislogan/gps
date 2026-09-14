@@ -67,7 +67,7 @@ html, body {
 
 body { position: fixed; inset: 0; overflow: hidden; }
 
-.map { position: absolute; inset: 0; }
+#map { position: absolute; inset: 0; }
 .map canvas { outline: none; }
 
 /* --------------------------------------------------------------- top bar -- */
@@ -577,6 +577,8 @@ body { height: var(--app-height, 100dvh); bottom: auto; }
 .welcome p { margin: 0 0 14px; color: var(--text-dim); font-size: .95rem; }
 .favorites { display: flex; gap: 8px; }
 .favorites > * { flex: 1; }
+.btn { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+.has-results #report-button, .has-results #share-button { display: none; }
 .has-results .fabs { bottom: calc(var(--safe-bottom) + 52%); }
 .map-status {
   position: absolute; z-index: 12; top: 35%; left: 16px; right: 16px;

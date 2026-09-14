@@ -23,7 +23,7 @@ if [ -n "${NICANAV_BACKUP_RCLONE_TARGET:-}" ]; then
 fi
 
 echo "dumping to ${OUT}"
-docker compose -f "${REPO_ROOT}/infra/docker-compose.yml" --env-file "${NICANAV_ENV_FILE:-${REPO_ROOT}/infra/.env}" \
+docker compose -f "${NICANAV_COMPOSE_FILE:-${REPO_ROOT}/infra/docker-compose.yml}" --env-file "${NICANAV_ENV_FILE:-${REPO_ROOT}/infra/.env}" \
   exec -T postgis pg_dump -U "${NICANAV_PG_USER:-nicanav}" -d "${NICANAV_PG_DB:-nicanav}" \
   | gzip -9 > "${OUT}.tmp"
 

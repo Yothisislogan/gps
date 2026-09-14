@@ -10,6 +10,7 @@
 
 COMPOSE := docker compose -f infra/docker-compose.yml --env-file infra/.env
 PYTHON  := python3
+HOST := $(PYTHON) scripts/run_host.py
 DATA    ?= data
 
 .DEFAULT_GOAL := help
@@ -83,19 +84,19 @@ build:  ## Rebuild the api and pipeline images
 RUN_PIPELINE := $(COMPOSE) --profile tools run --rm pipeline
 
 nightly:  ## Full pipeline: OSM -> tiles + graph + POIs + index + QA
-	./pipeline/nightly.sh
+	$(HOST) bash pipeline/nightly.sh
 
 circle:  ## Regenerate the 48.3 km curation circle around MGA
 	$(PYTHON) scripts/circle48.py --output $(DATA)/osm/circle48.geojson
 
 tiles:  ## Rebuild base.pmtiles from the current extract
-	./pipeline/build_tiles.sh
+	$(HOST) bash pipeline/build_tiles.sh
 
 circle-tiles:  ## Rebuild the offline archive for the 48.3 km circle
-	./pipeline/build_tiles.sh --circle-only
+	$(HOST) bash pipeline/build_tiles.sh --circle-only
 
 valhalla:  ## Rebuild the routing graph from the current extract
-	./pipeline/build_valhalla.sh
+	$(HOST) bash pipeline/build_valhalla.sh
 
 pois:  ## Re-run POI ingest, conflation, load and export
 	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.fetch_osm_pois
@@ -130,10 +131,10 @@ psql:  ## Open a psql shell
 	$(COMPOSE) exec postgis psql -U nicanav -d nicanav
 
 backup:  ## Dump the database to data/backups/
-	./scripts/backup_db.sh
+	$(HOST) bash scripts/backup_db.sh
 
 verify:  ## Post-deploy checks for the failures that are otherwise silent
-	./scripts/verify_deploy.sh $(BASE_URL)
+	$(HOST) bash scripts/verify_deploy.sh $(BASE_URL)
 
 verify-images:  ## Confirm every pinned container image still exists
 	@grep -hoE 'image: *[^ ]+' infra/docker-compose.yml | awk '{print $$2}' | while read -r img; do \

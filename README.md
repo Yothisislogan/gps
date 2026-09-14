@@ -138,3 +138,10 @@ everyone gets them, not in a private table here.
 ## Licence
 
 Apache-2.0 — see [LICENSE](LICENSE).
+
+
+### Mobile release and deployment
+
+The [mobile deployment plan](docs/MOBILE-DEPLOYMENT.md) records implemented UX,
+startup/cache/offline changes, the staged release tooling, and the required
+real-phone and live-service gates. Production web files are built into `dist/web`.

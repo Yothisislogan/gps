@@ -187,3 +187,12 @@ runs shell/JavaScript/algorithm regressions. CI also runs real PostGIS tests for
 merge preservation, stable redirects, repeat imports, separation and transaction
 rollback. Device GPU rendering, storage eviction and actual road travel still need
 phone testing; this does not claim offline search or offline route calculation.
+
+
+## Mobile release and deployment pass
+
+See [MOBILE-DEPLOYMENT.md](MOBILE-DEPLOYMENT.md) for the current implemented list,
+exact staging/adoption commands, performance budgets and remaining phone/live
+service gates. The later release flow supersedes the earlier sequential-only
+publication notes **when the operator adopts managed releases**. The legacy
+pipeline retains sequential behavior for initial private builds.
