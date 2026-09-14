@@ -157,8 +157,24 @@ class Database:
 
     async def health(self) -> bool:
         try:
-            await self._fetch("SELECT 1")
-            return True
+            # pg_isready/SELECT 1 can succeed after an init script failed and
+            # rolled back. Publication requires the application schema too.
+            rows = await self._fetch("""
+                SELECT revision FROM public.release_revision
+                WHERE id = 1 AND public.nicanav_normalize('Café') = 'cafe'
+                AND NOT EXISTS (
+                    SELECT 1 FROM unnest(ARRAY[
+                        'public.poi', 'public.poi_source', 'public.poi_match_queue',
+                        'public.poi_photo', 'public.poi_flag', 'public.gazetteer',
+                        'public.alias', 'public.kmpost', 'public.closure',
+                        'public.report', 'public.poi_suggestion', 'public.poi_redirect',
+                        'public.highway', 'public.kpi_snapshot', 'public.search_log',
+                        'public.route_log'
+                    ]) AS required(name)
+                    WHERE to_regclass(name) IS NULL
+                )
+            """)
+            return len(rows) == 1
         except Exception:
             return False
 

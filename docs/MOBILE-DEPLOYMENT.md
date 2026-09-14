@@ -64,7 +64,11 @@ osmium, jq and tippecanoe). Keep a Python virtualenv at `/opt/nicanav/.venv`.
    `make prepare` builds `dist/web`, renders runtime config and nginx auth.
    Compose serves **`dist/web`**, so copying the editable `web` folder alone is
    insufficient. Existing databases need `make migrate` before the new API.
-   Migration `004_release_revision.sql` follows the correction migration `003`.
+   Apply all migrations through `005_normalize_search_path.sql`. Migration 005
+   fixes PostgreSQL 17 expression-index maintenance on existing installations;
+   migration 001 also includes the fix for fresh databases. If an earlier
+   bootstrap failed, follow [database recovery](POSTGRES-RECOVERY.md) instead of
+   treating `pg_isready` as evidence that the application schema is installed.
 3. With the host still private, run `make nightly`, then
    `python scripts/run_host.py bash pipeline/monthly_overture.sh`. Confirm real
    source metadata, nonempty search, route narration and `make verify`.

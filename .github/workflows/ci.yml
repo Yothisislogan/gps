@@ -106,11 +106,15 @@ jobs:
         run: python3 scripts/validate_data.py
 
   moderation:
-    name: correction publication with PostGIS
+    name: schema and corrections (PostGIS ${{ matrix.postgis }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgis: ["16-3.4", "17-3.5"]
     services:
       postgis:
-        image: postgis/postgis:16-3.4
+        image: postgis/postgis:${{ matrix.postgis }}
         env:
           POSTGRES_DB: nicanav_test
           POSTGRES_USER: nicanav
@@ -125,7 +129,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements/dev.txt
-      - name: Test real correction transactions
+      - name: Test schema installation, maintenance and correction transactions
         env:
           NICANAV_TEST_DSN: postgresql://nicanav:test-only-password@localhost:5432/nicanav_test
         run: pytest -q -m docker tests/test_moderation_postgis.py

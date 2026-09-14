@@ -35,7 +35,9 @@ CREATE OR REPLACE FUNCTION nicanav_normalize(text)
   IMMUTABLE
   PARALLEL SAFE
   STRICT
-AS $$ SELECT lower(nicanav_unaccent($1)) $$;
+-- PostgreSQL 17 restricts search_path while building/maintaining indexes.
+-- Resolve nested functions explicitly so expression indexes work there too.
+AS $$ SELECT pg_catalog.lower(public.nicanav_unaccent($1)) $$;
 
 CREATE OR REPLACE FUNCTION nicanav_touch_updated_at()
   RETURNS trigger LANGUAGE plpgsql AS $$

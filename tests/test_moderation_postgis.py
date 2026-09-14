@@ -1,5 +1,6 @@
 """Real PostGIS checks; CI supplies a dedicated disposable database."""
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -44,6 +45,69 @@ def records():
         }
         for i, s in enumerate(("osm", "overture"))
     ]
+
+
+def test_normalization_and_index_maintenance_with_restricted_search_path(db):
+    items = records()
+    items[0]["name"] = "Café Ñandú"
+    load([p.as_feature() for p in conflate(items[:1]).merged], DSN)
+    with db.transaction():
+        db.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+        assert db.execute("SELECT public.nicanav_normalize('Café Ñandú')").fetchone() == (
+            "cafe nandu",
+        )
+        # Exercise populated expression indexes, not just a function call.
+        db.execute("REINDEX TABLE public.poi")
+        db.execute("REINDEX TABLE public.poi_source")
+        db.execute("ANALYZE public.poi")
+
+
+def test_upgrade_repairs_existing_function_and_preserves_rows(db):
+    import psycopg
+
+    load([p.as_feature() for p in conflate(records()[:1]).merged], DSN)
+    before = db.execute("SELECT id,name FROM poi").fetchall()
+    db.execute("""
+        CREATE OR REPLACE FUNCTION public.nicanav_normalize(text)
+        RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $$ SELECT lower(nicanav_unaccent($1)) $$
+    """)
+    # Confirm this is the actual failure, including on PostgreSQL 16.
+    with pytest.raises(psycopg.errors.UndefinedFunction), db.transaction():
+        db.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+        db.execute("SELECT public.nicanav_normalize('Café')")
+    migration = Path(__file__).resolve().parents[1] / "db/migrations/005_normalize_search_path.sql"
+    db.execute(migration.read_text())
+    with db.transaction():
+        db.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+        assert db.execute("SELECT public.nicanav_normalize('Café')").fetchone() == ("cafe",)
+        db.execute("REINDEX TABLE public.poi")
+    assert db.execute("SELECT id,name FROM poi").fetchall() == before
+
+
+def test_database_readiness_rejects_incomplete_schema_and_recovers(db):
+    from api.clients.db import Database
+
+    async def health():
+        database = Database(DSN)
+        try:
+            return await database.health()
+        finally:
+            await database.close()
+
+    assert asyncio.run(health())
+    db.execute("ALTER TABLE public.poi RENAME TO poi_unavailable")
+    assert not asyncio.run(health())
+    db.execute("ALTER TABLE public.poi_unavailable RENAME TO poi")
+    assert asyncio.run(health())
+    # Reproduce the empty schema left by the failed, transactional 001 script.
+    db.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+    assert db.execute("SELECT 1").fetchone() == (1,)
+    assert not asyncio.run(health())
+    # Replaying migrations completes installation without resetting PGDATA.
+    for path in sorted((Path(__file__).resolve().parents[1] / "db/migrations").glob("*.sql")):
+        db.execute(path.read_text())
+    assert asyncio.run(health())
 
 
 def test_merge_preserves_links_related_records_and_reimports(db, tmp_path):
