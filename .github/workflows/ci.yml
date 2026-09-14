@@ -26,6 +26,12 @@ jobs:
       - name: Install
         run: pip install -r requirements/dev.txt
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build required offline assets
+        run: npm ci --ignore-scripts && npm run build
+
       - name: Lint
         run: |
           ruff check .
@@ -38,7 +44,7 @@ jobs:
         run: pytest -q -m "not network and not docker"
 
   javascript:
-    name: navigation geometry
+    name: navigation and browser logic
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,10 +53,35 @@ jobs:
         with:
           node-version: "22"
 
-      # node --test only; the app itself has no build step and no npm
-      # dependencies, deliberately (docs/PLAN.md section 6.1).
+      - name: Build local browser dependencies
+        run: npm ci --ignore-scripts && npm run build
+
+      - name: Verify offline dependency graph
+        run: node scripts/check_offline_assets.mjs
       - name: Test
         run: node --test "tests/js/*.test.mjs"
+
+  map-tools:
+    name: real map tool formats
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements/dev.txt
+      - name: Install map tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y osmium-tool build-essential libsqlite3-dev zlib1g-dev
+          git clone --depth 1 --branch 2.78.0 https://github.com/felt/tippecanoe.git /tmp/tippecanoe
+          test "$(git -C /tmp/tippecanoe rev-parse HEAD)" = 2d548bed0623005ab1ae619595ef4cfe1c745d3e
+          make -C /tmp/tippecanoe -j2 tippecanoe
+          sudo install -m 755 /tmp/tippecanoe/tippecanoe /usr/local/bin/tippecanoe
+      - name: Test downloads, PBF exports and PMTiles output
+        env:
+          NICANAV_REQUIRE_MAP_TOOLS: "1"
+        run: pytest -q tests/test_pipeline_formats.py
 
   generated:
     name: generated files are current
@@ -92,30 +123,72 @@ jobs:
         run: pip install -r requirements/dev.txt
 
       # Each file is validated by the repository's own loader, so the check
-      # cannot drift from how the code actually reads it. A missing file is a
-      # clear skip rather than a confusing failure.
+      # cannot drift from how the code actually reads it. Missing data fails.
       - name: Validate
-        run: |
-          python3 - <<'PY'
-          import pathlib, sys
+        run: python3 scripts/validate_data.py
 
-          checks = [
-              ("docs/taxonomy.csv", "pipeline.pois.taxonomy", "load_taxonomy"),
-              ("docs/carreteras.csv", "pipeline.geocode.kmpost", "load_highways"),
-              ("docs/golden_routes.json", "pipeline.qa.golden_routes", "load_cases"),
-          ]
-          failed = False
-          for path, module_name, function_name in checks:
-              if not pathlib.Path(path).exists():
-                  print(f"skip {path} (not present)")
-                  continue
-              try:
-                  module = __import__(module_name, fromlist=[function_name])
-                  result = getattr(module, function_name)()
-                  size = len(result[0]) if isinstance(result, tuple) else len(result)
-                  print(f"ok   {path}: {size} entries")
-              except Exception as error:
-                  print(f"FAIL {path}: {error}")
-                  failed = True
-          sys.exit(1 if failed else 0)
-          PY
+  moderation:
+    name: schema and corrections (PostGIS ${{ matrix.postgis }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgis: ["16-3.4", "17-3.5"]
+    services:
+      postgis:
+        image: postgis/postgis:${{ matrix.postgis }}
+        env:
+          POSTGRES_DB: nicanav_test
+          POSTGRES_USER: nicanav
+          POSTGRES_PASSWORD: test-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nicanav -d nicanav_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements/dev.txt
+      - name: Test schema installation, maintenance and correction transactions
+        env:
+          NICANAV_TEST_DSN: postgresql://nicanav:test-only-password@localhost:5432/nicanav_test
+        run: pytest -q -m docker tests/test_moderation_postgis.py
+
+  browser:
+    name: mobile journeys (Chromium and WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: npm ci --ignore-scripts && npm run build
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-browser-results
+          path: test-results/
+          retention-days: 14
+
+  deployment:
+    name: release proxy and nginx configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements/dev.txt
+      - run: sudo apt-get update && sudo apt-get install -y nginx
+      - name: Real proxy generation and byte-range forwarding
+        run: pytest -q -m docker tests/test_release_gateway.py
+      - name: Container nginx syntax
+        run: docker run --rm --add-host api:127.0.0.1 -v "$PWD/infra/nginx.conf:/etc/nginx/nginx.conf:ro" nginx:1.27-alpine nginx -t

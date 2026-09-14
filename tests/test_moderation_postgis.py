@@ -1,0 +1,199 @@
+"""Real PostGIS checks; CI supplies a dedicated disposable database."""
+
+import asyncio
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from pipeline.pois.conflate import conflate
+from pipeline.pois.load_pois import load
+from pipeline.pois.review import mark_published, snapshot
+
+pytestmark = pytest.mark.docker
+DSN = os.environ.get("NICANAV_TEST_DSN", "")
+
+
+@pytest.fixture
+def db():
+    if not DSN:
+        pytest.skip("requires NICANAV_TEST_DSN")
+    import psycopg
+    from psycopg.conninfo import conninfo_to_dict
+
+    assert conninfo_to_dict(DSN).get("dbname") == "nicanav_test", (
+        "Only disposable test database allowed"
+    )
+    with psycopg.connect(DSN, autocommit=True) as conn:
+        conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        for path in sorted((Path(__file__).resolve().parents[1] / "db/migrations").glob("*.sql")):
+            conn.execute(path.read_text())
+        yield conn
+
+
+def records():
+    return [
+        {
+            "source": s,
+            "overture_license": "Apache-2.0" if s == "overture" else None,
+            "source_id": str(i),
+            "name": "Cafe",
+            "category": "cafe",
+            "lat": 12.1,
+            "lon": -86.2,
+        }
+        for i, s in enumerate(("osm", "overture"))
+    ]
+
+
+def test_normalization_and_index_maintenance_with_restricted_search_path(db):
+    items = records()
+    items[0]["name"] = "Café Ñandú"
+    load([p.as_feature() for p in conflate(items[:1]).merged], DSN)
+    with db.transaction():
+        db.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+        assert db.execute("SELECT public.nicanav_normalize('Café Ñandú')").fetchone() == (
+            "cafe nandu",
+        )
+        # Exercise populated expression indexes, not just a function call.
+        db.execute("REINDEX TABLE public.poi")
+        db.execute("REINDEX TABLE public.poi_source")
+        db.execute("ANALYZE public.poi")
+
+
+def test_upgrade_repairs_existing_function_and_preserves_rows(db):
+    import psycopg
+
+    load([p.as_feature() for p in conflate(records()[:1]).merged], DSN)
+    before = db.execute("SELECT id,name FROM poi").fetchall()
+    db.execute("""
+        CREATE OR REPLACE FUNCTION public.nicanav_normalize(text)
+        RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+        AS $$ SELECT lower(nicanav_unaccent($1)) $$
+    """)
+    # Confirm this is the actual failure, including on PostgreSQL 16.
+    with pytest.raises(psycopg.errors.UndefinedFunction), db.transaction():
+        db.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+        db.execute("SELECT public.nicanav_normalize('Café')")
+    migration = Path(__file__).resolve().parents[1] / "db/migrations/005_normalize_search_path.sql"
+    db.execute(migration.read_text())
+    with db.transaction():
+        db.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+        assert db.execute("SELECT public.nicanav_normalize('Café')").fetchone() == ("cafe",)
+        db.execute("REINDEX TABLE public.poi")
+    assert db.execute("SELECT id,name FROM poi").fetchall() == before
+
+
+def test_database_readiness_rejects_incomplete_schema_and_recovers(db):
+    from api.clients.db import Database
+
+    async def health():
+        database = Database(DSN)
+        try:
+            return await database.health()
+        finally:
+            await database.close()
+
+    assert asyncio.run(health())
+    db.execute("ALTER TABLE public.poi RENAME TO poi_unavailable")
+    assert not asyncio.run(health())
+    db.execute("ALTER TABLE public.poi_unavailable RENAME TO poi")
+    assert asyncio.run(health())
+    # Reproduce the empty schema left by the failed, transactional 001 script.
+    db.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+    assert db.execute("SELECT 1").fetchone() == (1,)
+    assert not asyncio.run(health())
+    # Replaying migrations completes installation without resetting PGDATA.
+    for path in sorted((Path(__file__).resolve().parents[1] / "db/migrations").glob("*.sql")):
+        db.execute(path.read_text())
+    assert asyncio.run(health())
+
+
+def test_merge_preserves_links_related_records_and_reimports(db, tmp_path):
+    items = records()
+    load([p.as_feature() for item in items for p in conflate([item]).merged], DSN)
+    ids = [r[0] for r in db.execute("SELECT id FROM poi ORDER BY id").fetchall()]
+    db.execute("UPDATE poi SET verified_at=now(), name='Reviewed cafe' WHERE id=%s", (ids[0],))
+    db.execute(
+        "INSERT INTO poi_photo(poi_id,url,license) VALUES (%s,'https://example.com/photo','CC0')",
+        (ids[1],),
+    )
+    db.execute(
+        "INSERT INTO poi_match_queue(left_key,right_key,score,decision,decided_at) VALUES ('osm:0','overture:1',0.7,'merge',now())"
+    )
+    path = tmp_path / "decisions.json"
+    snapshot(DSN, path)
+    decision = json.loads(path.read_text())
+    merged = [p.as_feature() for p in conflate(items, decisions=decision).merged]
+    load(merged, DSN)
+    load(merged, DSN)
+    assert db.execute("SELECT count(*) FROM poi").fetchone()[0] == 1
+    assert db.execute("SELECT id,name FROM poi").fetchone() == (ids[0], "Reviewed cafe")
+    assert (
+        db.execute("SELECT poi_id FROM poi_redirect WHERE old_id=%s", (ids[1],)).fetchone()[0]
+        == ids[0]
+    )
+    assert db.execute("SELECT poi_id FROM poi_photo").fetchone()[0] == ids[0]
+    assert db.execute("SELECT published_at FROM poi_match_queue").fetchone()[0] is None
+    export = tmp_path / "pois.jsonl"
+    export.write_text(json.dumps({"properties": {"id": str(ids[0])}}))
+    mark_published(DSN, path, export)
+    assert db.execute("SELECT published_at FROM poi_match_queue").fetchone()[0] is not None
+
+
+def test_separate_splits_previous_cluster_and_remains_separate(db):
+    items = records()
+    load(
+        [
+            p.as_feature()
+            for p in conflate(
+                items,
+                decisions=[{"left_key": "osm:0", "right_key": "overture:1", "decision": "merge"}],
+            ).merged
+        ],
+        DSN,
+    )
+    separated = [
+        p.as_feature()
+        for p in conflate(
+            items,
+            decisions=[{"left_key": "osm:0", "right_key": "overture:1", "decision": "separate"}],
+        ).merged
+    ]
+    load(separated, DSN)
+    load(separated, DSN)
+    assert db.execute("SELECT count(*) FROM poi").fetchone()[0] == 2
+    assert db.execute("SELECT count(DISTINCT poi_id) FROM poi_source").fetchone()[0] == 2
+
+
+def test_failed_load_rolls_back_earlier_clusters(db):
+    features = [p.as_feature() for p in conflate(records()[:1]).merged]
+    bad = json.loads(json.dumps(features[0]))
+    bad["properties"]["source_keys"] = ["unsupported:bad"]
+    with pytest.raises(ValueError):
+        load([*features, bad], DSN)
+    assert db.execute("SELECT count(*) FROM poi").fetchone()[0] == 0
+
+
+def test_publication_revision_changes_with_edits_but_not_empty_updates_or_reads(db):
+    def revision():
+        return db.execute("SELECT revision FROM release_revision WHERE id=1").fetchone()[0]
+
+    before = revision()
+    db.execute("SELECT count(*) FROM poi")
+    db.execute("UPDATE poi SET name='unused' WHERE false")
+    db.execute("INSERT INTO search_log(q,hits) VALUES ('test', 0)")
+    assert revision() == before
+    features = [p.as_feature() for p in conflate(records()[:1]).merged]
+    load(features, DSN)
+    after_import = revision()
+    assert after_import > before
+    db.execute("UPDATE poi SET name='New human correction'")
+    assert revision() > after_import
+    # A rejected transaction must not invalidate a valid candidate snapshot.
+    before_rollback = revision()
+    with pytest.raises(RuntimeError), db.transaction():
+        db.execute("UPDATE poi SET name='Rolled back'")
+        raise RuntimeError("undo")
+    assert revision() == before_rollback

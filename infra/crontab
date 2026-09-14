@@ -12,17 +12,17 @@ PATH=/usr/local/bin:/usr/bin:/bin
 MAILTO=ops@example.ni
 
 # Nightly: fresh OSM, tiles, routing graph, POI export, search index, QA.
-# The script is idempotent and publishes atomically, so a failed run leaves
-# yesterday's data serving rather than a half-built map.
+# Stops at the first failure; earlier successful steps may already be live.
+# Inspect /api/healthz data.pipelines for refresh state.
 15 2 * * *  cd $NICANAV_HOME && ./pipeline/nightly.sh >> /var/log/nicanav/nightly.log 2>&1
 
 # Golden routes again at midday, against the graph that has been serving all
 # morning. Catches a bad build that the post-build check happened to pass.
 0 12 * * *  cd $NICANAV_HOME && docker compose -f infra/docker-compose.yml --profile tools run --rm pipeline python3 -m pipeline.qa.golden_routes --json >> /var/log/nicanav/golden.log 2>&1
 
-# Monthly: refresh Overture Places (a new release lands mid-month) and
-# re-conflate only what changed, joined on the GERS ids already stored.
-30 3 5 * *  cd $NICANAV_HOME && ./pipeline/monthly_overture.sh >> /var/log/nicanav/overture.log 2>&1
+# Daily check for monthly Overture releases. Unchanged successful refreshes
+# are skipped; failed downstream publication is retried from the cached extract.
+30 3 * * *  cd $NICANAV_HOME && ./pipeline/monthly_overture.sh >> /var/log/nicanav/overture.log 2>&1
 
 # Database backup before the nightly build touches anything.
 45 1 * * *  cd $NICANAV_HOME && ./scripts/backup_db.sh >> /var/log/nicanav/backup.log 2>&1

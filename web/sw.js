@@ -8,7 +8,7 @@
  * (a `.pmtiles` archive is read with byte ranges, and a 206 cannot be cached).
  */
 
-const VERSION = 'v2';
+const VERSION = 'development-v5';
 const SHELL_CACHE = `nicanav-shell-${VERSION}`;
 const ASSET_CACHE = `nicanav-assets-${VERSION}`;
 
@@ -20,9 +20,21 @@ const SHELL = [
   // the repository — but it must be cached, or an offline start has no API URL.
   '/config.js',
   '/css/app.css',
+  '/vendor/v1/maplibre-gl.mjs',
+  '/vendor/v1/maplibre-gl-shared.mjs',
+  '/vendor/v1/maplibre-gl-worker.mjs',
+  '/vendor/v1/maplibre-gl.css',
+  '/vendor/v1/pmtiles.js',
+  '/vendor/v1/opening-hours.mjs',
+  '/vendor/v1/noto-regular.woff2',
+  '/vendor/v1/noto-bold.woff2',
+  '/vendor/v1/noto-italic.woff2',
+
   '/js/api.js',
   '/js/config.js',
   '/js/map.js',
+  '/js/updates.js',
+  '/js/favorites.js',
   '/js/poi.js',
   '/js/search.js',
   '/js/share.js',
@@ -36,46 +48,37 @@ const SHELL = [
   // navigation with a module-resolution error rather than a missing feature.
   '/js/simulator.js',
   '/js/offline.js',
+  '/js/offline-style.js',
   '/style/nicanav.json',
   '/style/nicanav-night.json',
   '/sprites/nicanav.json',
   '/sprites/nicanav.png',
+  '/sprites/nicanav@2x.json',
+  '/sprites/nicanav@2x.png',
   '/manifest.webmanifest',
+  '/icons/favicon.svg',
+  '/icons/apple-touch-icon.png',
+  '/icons/app-192.png',
+  '/icons/app-512.png',
+  '/icons/app-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(SHELL_CACHE)
-      // Individually, not addAll: one 404 must not fail the whole install and
-      // leave the app with no offline shell at all.
-      .then((cache) =>
-        Promise.all(
-          SHELL.map((url) =>
-            cache.add(new Request(url, { cache: 'reload' })).catch(() => undefined),
-          ),
-        ),
-      )
-      .then(() => self.skipWaiting()),
+      // Keep the previous worker if this release cannot cache its full shell.
+      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' })))),
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((names) =>
-        Promise.all(
-          names
-            .filter((name) => name.startsWith('nicanav-') && !name.endsWith(VERSION) && !name.startsWith('nicanav-offline'))
-            .map((name) => caches.delete(name)),
-        ),
-      )
-      .then(() => self.clients.claim()),
+    self.clients.claim(),
   );
 });
 
-/** Fonts, sprites and the style: immutable enough to serve from cache first. */
+/** Only public, explicitly owned assets belong in offline storage. */
 function isImmutableAsset(url) {
   return (
     url.pathname.startsWith('/fonts/') ||
@@ -91,62 +94,55 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Never cache the API. A stale route is a wrong turn.
-  if (url.pathname.startsWith('/api/')) return;
+  // Basic-auth pages must never survive logout or become visible offline.
+  // Bypass even existing caches; activation also removes the old broad cache.
+  if (request.headers.has('authorization') ||
+      /^\/(api|admin)(\/|$)/.test(url.pathname)) return;
 
   // Tiles are byte-range requests; the cache cannot hold their 206 responses,
   // and offline.js owns the whole-archive copy instead.
   if (url.pathname.startsWith('/tiles/')) return;
 
-  if (isImmutableAsset(url)) {
-    event.respondWith(
-      caches.match(request).then(
-        (hit) =>
-          hit ||
-          fetch(request).then((response) => {
-            if (response.ok) {
-              const copy = response.clone();
-              caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
-            }
-            return response;
-          }),
-      ),
-    );
-    return;
-  }
+  const navigation = request.mode === 'navigate' &&
+    (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/@'));
+  if (!navigation && !SHELL.includes(url.pathname) && !isImmutableAsset(url)) return;
 
-  // The shell: network first with a short timeout, cache as the safety net.
-  // A driver who has lost signal still gets the app; one who has not gets the
-  // current version without a hard refresh.
-  event.respondWith(
-    Promise.race([
-      fetch(request).then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      }),
-      new Promise((resolve) => {
-        setTimeout(() => caches.match(request).then((hit) => hit && resolve(hit)), 3000);
-      }),
-    ]).catch(() =>
-      caches
-        .match(request)
-        .then((hit) => hit || caches.match('/index.html'))
-        .then(
-          (hit) =>
-            hit ||
-            new Response('Sin conexión', {
-              status: 503,
-              headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-            }),
-        ),
-    ),
-  );
+  // Every installed shell belongs to one content-addressed release. A warm
+  // start reads it immediately, even on a connection that is nominally online.
+  const fallback = () => new Response('Sin conexión', { status: 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const path = navigation ? '/index.html' : url.pathname;
+  event.respondWith(caches.open(SHELL_CACHE).then(async (cache) => {
+    const hit = await cache.match(path);
+    if (hit) return hit;
+    let timer;
+    const network = fetch(request).then(async (response) => {
+      if (canCache(response)) await cache.put(path, response.clone()).catch(() => {});
+      return response;
+    }).catch(fallback);
+    event.waitUntil(network.then(() => undefined));
+    return Promise.race([network, new Promise(resolve => {
+      timer = setTimeout(() => resolve(fallback()), 3000);
+    })]).finally(() => clearTimeout(timer));
+  }));
 });
 
-// Lets a new version take over without waiting for every tab to close.
+function canCache(response) {
+  return response.status === 200 && !response.redirected &&
+    !/no-store|private/i.test(response.headers.get('cache-control') || '');
+}
+
+// A waiting release checks every open tab; a trip in another tab blocks it.
 self.addEventListener('message', (event) => {
-  if (event.data === 'skip-waiting') self.skipWaiting();
+  if (event.data !== 'activate-update') return;
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const states = await Promise.all(clients.map(client => new Promise(resolve => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => { channel.port1.close(); resolve(true); }, 1500);
+      channel.port1.onmessage = reply => { clearTimeout(timer); channel.port1.close(); resolve(reply.data?.busy !== false); };
+      client.postMessage('update-check', [channel.port2]);
+    })));
+    if (!states.some(Boolean)) await self.skipWaiting();
+  })());
 });

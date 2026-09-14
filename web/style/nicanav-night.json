@@ -16,7 +16,23 @@
       "url": "pmtiles:///tiles/pois.pmtiles"
     }
   },
-  "glyphs": "/fonts/{fontstack}/{range}.pbf",
+  "font-faces": {
+    "Noto Sans Regular": [
+      {
+        "url": "/vendor/v1/noto-regular.woff2"
+      }
+    ],
+    "Noto Sans Bold": [
+      {
+        "url": "/vendor/v1/noto-bold.woff2"
+      }
+    ],
+    "Noto Sans Italic": [
+      {
+        "url": "/vendor/v1/noto-italic.woff2"
+      }
+    ]
+  },
   "sprite": "/sprites/nicanav",
   "light": {
     "anchor": "viewport",

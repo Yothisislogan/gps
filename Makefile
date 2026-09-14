@@ -10,12 +10,13 @@
 
 COMPOSE := docker compose -f infra/docker-compose.yml --env-file infra/.env
 PYTHON  := python3
+HOST := $(PYTHON) scripts/run_host.py
 DATA    ?= data
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install test test-all lint format check up down restart logs ps \
+.PHONY: help venv install test test-all lint format check prepare up down restart logs ps \
         build web-config nightly tiles circle-tiles valhalla pois index qa golden kpis circle migrate psql \
-        backup check-speeds verify verify-images clean-tmp
+        backup check-speeds verify verify-images clean-tmp vendor
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -41,13 +42,26 @@ format:  ## Apply formatting and safe lint fixes
 	ruff format .
 
 check: lint test  ## Everything CI runs
+	node --test "tests/js/*.test.mjs"
+	node scripts/check_offline_assets.mjs
+	$(PYTHON) scripts/build_style.py --check
+	$(PYTHON) scripts/build_sprites.py --check
+	$(PYTHON) scripts/validate_data.py
 
 # ------------------------------------------------------------------ the stack
 
 web-config:  ## Regenerate web/config.js from the environment
-	$(PYTHON) scripts/render_web_config.py
+	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/render_web_config.py
 
-up: web-config  ## Start the stack
+vendor:  ## Build locked browser dependencies for local/offline startup
+	npm ci --ignore-scripts
+	npm run build
+
+prepare: vendor  ## Generate public config and nginx admin credentials
+	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/prepare_deploy.py
+	npm run release
+
+up: prepare  ## Start the stack
 	$(COMPOSE) up -d
 
 down:  ## Stop the stack (data volumes survive)
@@ -70,19 +84,19 @@ build:  ## Rebuild the api and pipeline images
 RUN_PIPELINE := $(COMPOSE) --profile tools run --rm pipeline
 
 nightly:  ## Full pipeline: OSM -> tiles + graph + POIs + index + QA
-	./pipeline/nightly.sh
+	$(HOST) bash pipeline/nightly.sh
 
 circle:  ## Regenerate the 48.3 km curation circle around MGA
 	$(PYTHON) scripts/circle48.py --output $(DATA)/osm/circle48.geojson
 
 tiles:  ## Rebuild base.pmtiles from the current extract
-	./pipeline/build_tiles.sh
+	$(HOST) bash pipeline/build_tiles.sh
 
 circle-tiles:  ## Rebuild the offline archive for the 48.3 km circle
-	./pipeline/build_tiles.sh --circle-only
+	$(HOST) bash pipeline/build_tiles.sh --circle-only
 
 valhalla:  ## Rebuild the routing graph from the current extract
-	./pipeline/build_valhalla.sh
+	$(HOST) bash pipeline/build_valhalla.sh
 
 pois:  ## Re-run POI ingest, conflation, load and export
 	$(RUN_PIPELINE) $(PYTHON) -m pipeline.pois.fetch_osm_pois
@@ -117,10 +131,10 @@ psql:  ## Open a psql shell
 	$(COMPOSE) exec postgis psql -U nicanav -d nicanav
 
 backup:  ## Dump the database to data/backups/
-	./scripts/backup_db.sh
+	$(HOST) bash scripts/backup_db.sh
 
 verify:  ## Post-deploy checks for the failures that are otherwise silent
-	./scripts/verify_deploy.sh $(BASE_URL)
+	$(HOST) bash scripts/verify_deploy.sh $(BASE_URL)
 
 verify-images:  ## Confirm every pinned container image still exists
 	@grep -hoE 'image: *[^ ]+' infra/docker-compose.yml | awk '{print $$2}' | while read -r img; do \

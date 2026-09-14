@@ -41,10 +41,13 @@ async def route(
         raise ApiError("too_many_locations", f"Máximo {MAX_LOCATIONS} puntos por ruta.")
 
     exclude_polygons: list[Any] = []
+    closures_status = "skipped"
     if body.exclude_closures:
         try:
             exclude_polygons = await database.active_closures()
+            closures_status = "checked"
         except Exception:
+            closures_status = "unavailable"
             log.warning("closure lookup failed; routing without exclusions", exc_info=True)
 
     date_time = None
@@ -89,6 +92,7 @@ async def route(
 
     response["nicanav"] = {
         "closures_applied": len(exclude_polygons),
+        "closures_status": closures_status,
         "alternates_requested": body.alternates,
         "language": body.language or settings.default_language,
     }

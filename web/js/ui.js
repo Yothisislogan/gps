@@ -19,7 +19,38 @@ const LANG_KEY = 'nicanav.lang';
  */
 const STRINGS = {
   es: {
-    'search.placeholder': 'Buscar un lugar o una dirección',
+    'poi.sendCorrection': 'Enviar corrección para revisión',
+    'map.loading': 'Cargando el mapa…',
+    'map.slow': 'El mapa tarda en cargar. Podés seguir buscando.',
+    'update.ready': 'Hay una nueva versión disponible.',
+    'update.apply': 'Actualizar',
+    'search.welcome': '¿Adónde vamos?',
+    'search.welcomeHint': 'Buscá un lugar o escribí una dirección con referencias.',
+    'search.home': 'Casa',
+    'search.work': 'Trabajo',
+    'search.saveHome': 'Guardar como casa',
+    'search.saveWork': 'Guardar como trabajo',
+    'search.pin': 'Elegir un punto en el mapa',
+    'search.widen': 'Buscar en todo Nicaragua',
+    'poi.more': 'Más opciones',
+    'poi.entrance': 'Entrada sin confirmar',
+    'dir.confirmOrigin': 'Confirmar salida',
+    'dir.originHint': 'Mové el mapa hasta el punto desde donde vas a salir.',
+    'poi.confirm': 'Confirmar destino',
+    'poi.adjust': 'Ajustar el punto',
+    'poi.adjustHint': 'Mové el mapa hasta que el punto marque la entrada.',
+    'poi.confirmed': 'Punto confirmado para este viaje',
+    'poi.approximate': 'Ubicación aproximada: revisá el punto.',
+    'poi.saved': 'Lugar guardado en este dispositivo',
+    'dir.manual': 'Elegir punto de salida',
+    'dir.noPositionHint': 'Podés elegir desde dónde salir sin activar el GPS.',
+    'dir.shortest': 'Menor distancia',
+    'dir.other': 'Otra opción',
+    'dir.extra': '+{n} min',
+    'dir.routeAgain': 'Cambiar destino',
+    'dir.closuresUnavailable': 'No pudimos comprobar los cierres de calles. Revisá las condiciones antes de salir.',
+    'dir.avoidUnpaved': 'Evitar caminos de tierra',
+    'search.placeholder': '¿Adónde vamos?',
     'search.cancel': 'Cancelar',
     'search.clear': 'Borrar',
     'search.recent': 'Búsquedas recientes',
@@ -124,6 +155,37 @@ const STRINGS = {
     'settings.attribution': 'Datos y licencias',
   },
   en: {
+    'poi.sendCorrection': 'Submit correction for review',
+    'map.loading': 'Loading the map…',
+    'map.slow': 'The map is loading slowly. You can still search.',
+    'update.ready': 'An app update is ready.',
+    'update.apply': 'Update',
+    'search.welcome': 'Where are we going?',
+    'search.welcomeHint': 'Search for a place or describe it using landmarks.',
+    'search.home': 'Home',
+    'search.work': 'Work',
+    'search.saveHome': 'Save as home',
+    'search.saveWork': 'Save as work',
+    'search.pin': 'Choose a point on the map',
+    'search.widen': 'Search all Nicaragua',
+    'poi.more': 'More options',
+    'poi.entrance': 'Entrance unconfirmed',
+    'dir.confirmOrigin': 'Confirm start',
+    'dir.originHint': 'Move the map to the point where your trip will start.',
+    'poi.confirm': 'Confirm destination',
+    'poi.adjust': 'Adjust the pin',
+    'poi.adjustHint': 'Move the map until the pin marks the entrance.',
+    'poi.confirmed': 'Pin confirmed for this trip',
+    'poi.approximate': 'Approximate location: check the pin.',
+    'poi.saved': 'Place saved on this device',
+    'dir.manual': 'Choose starting point',
+    'dir.noPositionHint': 'You can choose a starting point without GPS.',
+    'dir.shortest': 'Shortest distance',
+    'dir.other': 'Another option',
+    'dir.extra': '+{n} min',
+    'dir.routeAgain': 'Change destination',
+    'dir.closuresUnavailable': 'Road closures could not be checked. Check conditions before leaving.',
+    'dir.avoidUnpaved': 'Avoid unpaved roads',
     'search.placeholder': 'Search a place or an address',
     'search.cancel': 'Cancel',
     'search.clear': 'Clear',
@@ -691,7 +753,9 @@ class Sheet {
   open(content, options = {}) {
     this.mount();
     if (!this.root || !this.body) return;
-    // A previous card's onClose must not fire because a new card replaced it.
+    // Dispose resources when another flow takes over. Rendering the next state
+    // of the same flow keeps its identical close callback alive.
+    if (this.closeHandler && this.closeHandler !== options.onClose) this.closeHandler();
     this.closeHandler = options.onClose || null;
     if (this.titleNode) this.titleNode.textContent = options.title || '';
     clear(this.body);
@@ -700,6 +764,7 @@ class Sheet {
     this.root.classList.toggle('sheet--full', Boolean(options.expanded));
     this.root.style.transform = '';
     this.root.hidden = false;
+    this.root.classList.add('sheet--open');
     document.body.classList.add('has-sheet');
   }
 
@@ -720,7 +785,7 @@ class Sheet {
     if (!this.root || this.root.hidden) return;
     this.root.hidden = true;
     this.root.style.transform = '';
-    this.root.classList.remove('sheet--full');
+    this.root.classList.remove('sheet--full', 'sheet--open');
     if (this.body) clear(this.body);
     document.body.classList.remove('has-sheet');
     const handler = this.closeHandler;
@@ -760,7 +825,7 @@ class Sheet {
     }
     if (this.dragOffset > 90) this.close();
     else if (this.dragOffset < -40) this.root.classList.add('sheet--full');
-    else if (this.dragOffset > 40) this.root.classList.remove('sheet--full');
+    else if (this.dragOffset > 40) this.root.classList.remove('sheet--full', 'sheet--open');
   }
 }
 

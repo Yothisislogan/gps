@@ -1,0 +1,8 @@
+[Unit]
+Description=Back up the active NicaNav database daily
+[Timer]
+OnCalendar=*-*-* 00:30:00 America/Managua
+Persistent=true
+Unit=nicanav-managed@backup.service
+[Install]
+WantedBy=timers.target

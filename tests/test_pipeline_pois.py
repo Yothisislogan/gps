@@ -429,3 +429,29 @@ class TestLoadParams:
             ("overture", "08f"),
         ]
         assert _source_pairs({"sources": {}}) == []
+
+
+def test_conflation_preserves_each_overture_license():
+    from pipeline.pois.conflate import conflate
+    from pipeline.pois.load_pois import _source_license
+
+    records = [
+        {
+            "source": "overture",
+            "source_id": str(i),
+            "name": "Cafe",
+            "lat": 12.1,
+            "lon": -86.2,
+            "overture_license": license,
+        }
+        for i, license in enumerate(("Apache-2.0", "CDLA-Permissive-2.0"))
+    ]
+    result = conflate(
+        records,
+        decisions=[{"left_key": "overture:0", "right_key": "overture:1", "decision": "merge"}],
+    )
+    props = result.merged[0].as_feature()["properties"]
+    assert _source_license(props, "overture", "0") == "Apache-2.0"
+    assert _source_license(props, "overture", "1") == "CDLA-Permissive-2.0"
+    with pytest.raises(ValueError, match="Missing Overture source license"):
+        _source_license({}, "overture", "unknown")

@@ -20,6 +20,26 @@
   <li>Problemas marcados en lugares: <strong>{{ counts.flags or 0 }}</strong></li>
 </ul>
 
+<h2>Actualización de datos</h2>
+<table>
+  <thead><tr><th>Fuente</th><th>Versión de origen</th><th>Importación completada</th></tr></thead>
+  <tbody>
+  {% for name, source in data_status.sources.items() %}
+    <tr><td>{{ name }}</td><td>{{ source.release or source.source_timestamp or 'Desconocida' }}</td><td>{{ source.imported_at or 'Sin registro' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table>
+  <thead><tr><th>Proceso</th><th>Estado / etapa</th><th>Último éxito completo</th></tr></thead>
+  <tbody>
+  {% for name, run in data_status.pipelines.items() %}
+    <tr><td>{{ name }}</td><td>{{ {'unknown': 'Sin registro', 'running': 'En curso o interrumpido', 'failed': 'Falló', 'succeeded': 'Completado', 'unchanged': 'Sin nueva versión'}.get(run.status, 'Desconocido') }}{% if run.stage %} — {{ run.stage }}{% endif %}{% if run.scope == 'partial' %} (parcial){% endif %}</td><td>{{ run.last_full_success_at or 'Sin registro' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="note">Una importación reciente no significa que cada negocio fue verificado.
+  Una falla puede dejar componentes de distintas versiones; revisá la etapa indicada.</p>
+
 <h2>Archivos publicados</h2>
 <table>
   <thead><tr><th>Archivo</th><th>Tamaño</th><th>Antigüedad</th></tr></thead>
@@ -34,8 +54,7 @@
   </tbody>
 </table>
 <p class="note">
-  Un archivo viejo es la falla más silenciosa del sistema: todo sigue
-  funcionando, con las calles del mes pasado.
+  La antigüedad del archivo indica cuándo se construyó, no cuándo se actualizó la fuente.
 </p>
 
 <h2>Calidad de datos{% if kpi_taken_at %} <small>({{ kpi_taken_at }})</small>{% endif %}</h2>

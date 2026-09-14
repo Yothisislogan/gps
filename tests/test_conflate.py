@@ -830,3 +830,42 @@ def test_cli_returns_non_zero_when_an_input_is_missing(tmp_path: Any) -> None:
 
 def test_cli_help_builds() -> None:
     assert conf.build_parser().format_help()
+
+
+class TestHumanDecisions:
+    def test_explicit_merge_outside_blocking_radius(self):
+        a = rec(source_id="a", name="Cafe")
+        b = rec(source="overture", source_id="b", name="Other", lat=13.0)
+        result = conflate(
+            [a, b], decisions=[{"left_key": a.key, "right_key": b.key, "decision": "merge"}]
+        )
+        assert len(result.merged) == 1
+        assert set(result.merged[0].source_keys) == {a.key, b.key}
+
+    def test_separation_blocks_transitive_auto_merge(self):
+        records = [rec(source_id=str(i), name="Cafe", phone="+50588888888") for i in range(3)]
+        result = conflate(
+            records,
+            decisions=[
+                {"left_key": records[0].key, "right_key": records[2].key, "decision": "separate"}
+            ],
+        )
+        assert all(
+            not {records[0].key, records[2].key} <= set(p.source_keys) for p in result.merged
+        )
+
+    def test_conflicting_human_edges_fail_instead_of_overriding_a_separation(self):
+        records = [rec(source_id=str(i)) for i in range(3)]
+        decisions = [
+            {"left_key": records[a].key, "right_key": records[b].key, "decision": d}
+            for a, b, d in [(0, 1, "merge"), (1, 2, "merge"), (0, 2, "separate")]
+        ]
+        with pytest.raises(ValueError, match="conflict"):
+            conflate(records, decisions=decisions)
+
+    def test_decision_survives_changed_upstream_attributes_and_input_order(self):
+        a = rec(source_id="a", name="Cafe")
+        b = rec(source="overture", source_id="b", name="Cafe", phone="+50588888888")
+        decisions = [{"left_key": a.key, "right_key": b.key, "decision": "separate"}]
+        for records in ([a, b], [replace(b, name="Cafe nuevo"), a]):
+            assert len(conflate(records, decisions=decisions).merged) == 2

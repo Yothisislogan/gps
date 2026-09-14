@@ -127,9 +127,9 @@ compose up -d valhalla
 # The build runs inside the container on start; a Nicaragua-sized graph takes a
 # few minutes. /status answers only once tiles are being served, so it doubles
 # as the readiness signal.
-wait_for_http "http://localhost:8002/status" "${VALHALLA_BUILD_TIMEOUT:-1800}"
+wait_for_http "${NICANAV_VALHALLA_URL:-http://localhost:8002}/status" "${VALHALLA_BUILD_TIMEOUT:-1800}"
 
-STATUS="$(curl -fsS http://localhost:8002/status)"
+STATUS="$(curl -fsS ${NICANAV_VALHALLA_URL:-http://localhost:8002}/status)"
 log "valhalla: ${STATUS}"
 
 # The speed table's failure mode is a log line, not an error: a config Valhalla
@@ -161,7 +161,7 @@ fi
 # narrates in English for Nicaraguan drivers is a product failure no health check
 # would notice. One canary route settles it.
 log "canary: Spanish narration"
-CANARY="$(curl -fsS -X POST http://localhost:8002/route -H 'Content-Type: application/json' -d '{
+CANARY="$(curl -fsS -X POST ${NICANAV_VALHALLA_URL:-http://localhost:8002}/route -H 'Content-Type: application/json' -d '{
   "locations":[{"lat":12.1415,"lon":-86.1682},{"lat":12.1150,"lon":-86.2504}],
   "costing":"auto","language":"es-ES","units":"kilometers"}' || true)"
 if [ -z "$CANARY" ]; then

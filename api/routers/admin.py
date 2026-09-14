@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 from api.clients.db import Database
 from api.deps import get_db, get_settings_dep
 from common.config import Settings
+from common.data_status import data_status
 from common.geo import NICARAGUA_BBOX
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -58,6 +59,14 @@ def require_admin(request: Request, settings: Settings = Depends(get_settings_de
     expected_user = settings.admin_user
     expected_password = settings.admin_password
 
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        allowed = {settings.public_base_url.rstrip("/"), str(request.base_url).rstrip("/")}
+        if request.headers.get("sec-fetch-site") == "cross-site" or (
+            origin is not None and origin.rstrip("/") not in allowed
+        ):
+            raise HTTPException(status_code=403, detail="Origen no autorizado")
+
     if not expected_password:
         # Refuse rather than fall open. An admin UI with no password configured
         # is worse than no admin UI.
@@ -74,8 +83,8 @@ def require_admin(request: Request, settings: Settings = Depends(get_settings_de
             user, _, password = decoded.partition(":")
         except (ValueError, UnicodeDecodeError):
             user, password = "", ""
-        if secrets.compare_digest(user, expected_user) and secrets.compare_digest(
-            password, expected_password
+        if secrets.compare_digest(user.encode(), expected_user.encode()) and secrets.compare_digest(
+            password.encode(), expected_password.encode()
         ):
             return user
 
@@ -126,7 +135,7 @@ _LATEST_KPIS = "SELECT taken_at, metrics FROM kpi_snapshot ORDER BY taken_at DES
 
 _MATCH_QUEUE = """
 SELECT q.id, q.left_key, q.right_key, q.score, q.name_score, q.distance_m, q.category_ok,
-       q.created_at,
+       q.created_at, q.decision, q.published_at,
        l.name AS left_name, l.category AS left_category, l.source AS left_source,
        ST_Y(l.geom) AS left_lat, ST_X(l.geom) AS left_lon,
        r.name AS right_name, r.category AS right_category, r.source AS right_source,
@@ -134,8 +143,7 @@ SELECT q.id, q.left_key, q.right_key, q.score, q.name_score, q.distance_m, q.cat
 FROM poi_match_queue q
 LEFT JOIN poi_source l ON l.source || ':' || l.source_id = q.left_key
 LEFT JOIN poi_source r ON r.source || ':' || r.source_id = q.right_key
-WHERE q.decision = 'pending'
-ORDER BY q.score DESC
+ORDER BY (q.decision = 'pending') DESC, q.decided_at DESC NULLS LAST, q.score DESC
 LIMIT %s OFFSET %s
 """
 
@@ -208,6 +216,7 @@ async def dashboard(
             "kpi_taken_at": taken_at,
             "available": getattr(database, "available", False),
             "tiles": _tile_ages(request),
+            "data_status": data_status(request.app.state.settings.metadata_dir),
         },
     )
 
@@ -374,16 +383,16 @@ async def decide_pair(
         database,
         """
         UPDATE poi_match_queue
-        SET decision = %s, decided_by = %s, decided_at = now()
-        WHERE id = %s RETURNING id
+        SET decision = %s, decided_by = %s, decided_at = now(), published_at = NULL
+        WHERE id = %s AND decision = 'pending' RETURNING id
         """,
         (decision, user, pair_id),
     )
-    label = "Unidos" if decision == "merge" else "Separados"
+    label = "unir" if decision == "merge" else "separar"
     return HTMLResponse(
-        f'<tr class="decided"><td colspan="5">{label} por {user}</td></tr>'
+        f'<tr class="decided"><td colspan="5">Decisión guardada: {label} por {user}. Pendiente de aplicar al mapa.</td></tr>'
         if ok
-        else '<tr class="failed"><td colspan="5">No se pudo guardar</td></tr>'
+        else '<tr class="failed"><td colspan="5">No se pudo guardar: recargá la cola; la decisión puede estar guardada.</td></tr>'
     )
 
 
@@ -493,7 +502,7 @@ async def decide_alias(
     return HTMLResponse(
         f'<tr class="decided"><td colspan="4">{word}</td></tr>'
         if ok
-        else '<tr class="failed"><td colspan="4">No se pudo guardar</td></tr>'
+        else '<tr class="failed"><td colspan="4">No se pudo guardar: recargá la cola; la decisión puede estar guardada.</td></tr>'
     )
 
 

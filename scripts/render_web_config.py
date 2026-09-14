@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate ``web/config.js`` from the environment at deploy time.
 
-The PWA has no build step, so its runtime configuration cannot be baked in at
-compile time and must not be hardcoded either — the same static files are served
+Deployment configuration is generated before packaging content-addressed web
+assets and must not be hardcoded — the same static files are served
 from localhost during development and from a real hostname in production. This
 writes the one small file the app reads before anything else.
 
@@ -32,9 +32,10 @@ window.NICANAV_CONFIG = {config};
 
 def build_config() -> dict:
     settings = get_settings()
+    prefix = f"/data-releases/{settings.release_id}" if settings.release_id else ""
     return {
-        "apiBase": "/api",
-        "tilesBase": settings.tiles_base_url,
+        "apiBase": f"{prefix}/api",
+        "tilesBase": f"{prefix}{settings.tiles_base_url}",
         "styleUrl": "/style/nicanav.json",
         "publicBaseUrl": settings.public_base_url,
         # Managua, not the airport: the map should open where people are.
@@ -43,7 +44,7 @@ def build_config() -> dict:
         "mgaCenter": [MGA_LON, MGA_LAT],
         "curationRadiusM": CURATION_RADIUS_M,
         "defaultLanguage": settings.default_language,
-        "offlineArchive": f"{settings.tiles_base_url}/circle.pmtiles",
+        "offlineArchive": f"{prefix}{settings.tiles_base_url}/circle.pmtiles",
         "attribution": "© OpenStreetMap contributors · Overture Maps Foundation",
     }
 

@@ -1,0 +1,8 @@
+[Unit]
+Description=Expire old closures, reports and seven-day usage records
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=1h
+Unit=nicanav-managed@expire.service
+[Install]
+WantedBy=timers.target

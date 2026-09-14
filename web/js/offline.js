@@ -20,6 +20,10 @@
 
 import { CONFIG } from './config.js';
 import { pmtilesProtocol } from './map.js';
+import { offlineStyle } from './offline-style.js';
+
+const onlineStyles = new WeakMap();
+export function rememberOnlineStyle(map, style) { onlineStyles.set(map, style); }
 
 const CACHE_NAME = 'nicanav-offline-v1';
 /** The key MapLibre styles use for the offline archive. */
@@ -58,6 +62,8 @@ async function openCache() {
   return caches.open(CACHE_NAME);
 }
 
+const STORED_ARCHIVE = '/offline/current-map';
+
 function archiveUrl() {
   return CONFIG.offlineArchive || `${CONFIG.tilesBase}/circle.pmtiles`;
 }
@@ -66,20 +72,29 @@ function archiveUrl() {
  * What is stored, if anything.
  * @returns {Promise<{present: boolean, bytes: number, storedAt: string|null}>}
  */
+async function storedArchive() {
+  const cache = await openCache();
+  const response = await cache.match(STORED_ARCHIVE) || await cache.match(archiveUrl()) || await cache.match('/tiles/circle.pmtiles');
+  if (!response) return null;
+  if ((response.headers.get('content-type') || '').includes('application/json')) {
+    const meta = await response.json();
+    if (meta.file) {
+      const directory = await navigator.storage.getDirectory();
+      const file = await (await directory.getFileHandle(meta.file)).getFile();
+      return { meta, blob: () => Promise.resolve(file) };
+    }
+    const stored = await cache.match(meta.key);
+    if (!stored) return null;
+    return { meta, blob: () => stored.blob() };
+  }
+  return { meta: { bytes: Number(response.headers.get('content-length')), storedAt: response.headers.get('x-nicanav-stored-at') }, blob: () => response.blob() };
+}
+
 export async function offlineStatus() {
   try {
-    const cache = await openCache();
-    const response = await cache.match(archiveUrl());
-    if (!response) return { present: false, bytes: 0, storedAt: null };
-    const blob = await response.blob();
-    return {
-      present: true,
-      bytes: blob.size,
-      storedAt: response.headers.get('x-nicanav-stored-at'),
-    };
-  } catch {
-    return { present: false, bytes: 0, storedAt: null };
-  }
+    const stored = await storedArchive();
+    return stored ? { present: true, ...stored.meta } : { present: false, bytes: 0, storedAt: null };
+  } catch { return { present: false, bytes: 0, storedAt: null }; }
 }
 
 /**
@@ -88,7 +103,7 @@ export async function offlineStatus() {
  */
 export async function offlineSize() {
   try {
-    const response = await fetch(archiveUrl(), { method: 'HEAD' });
+    const response = await fetch(archiveUrl(), { method: 'HEAD', signal: AbortSignal.timeout(8000) });
     return Number(response.headers.get('content-length')) || 0;
   } catch {
     return 0;
@@ -104,60 +119,126 @@ export async function offlineSize() {
  * @param {(fraction: number, received: number, total: number) => void} [onProgress]
  * @param {AbortSignal} [signal]
  */
-export async function downloadCircle(onProgress, signal) {
-  const cache = await openCache();
-  const url = archiveUrl();
-  const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`No se pudo descargar el mapa (${response.status})`);
-
-  const total = Number(response.headers.get('content-length')) || 0;
-  const chunks = [];
-  let received = 0;
-
-  if (response.body && typeof response.body.getReader === 'function') {
-    const reader = response.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.byteLength;
-      if (onProgress) onProgress(total ? received / total : 0, received, total);
-    }
-  } else {
-    // Old WebViews have no streams; the download still works, just blind.
-    const buffer = await response.arrayBuffer();
-    chunks.push(new Uint8Array(buffer));
-    received = buffer.byteLength;
-    if (onProgress) onProgress(1, received, received || total);
-  }
-
-  const blob = new Blob(chunks, { type: 'application/octet-stream' });
-  await cache.put(
-    url,
-    new Response(blob, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': String(blob.size),
-        'x-nicanav-stored-at': new Date().toISOString(),
-      },
-    }),
-  );
-
-  await activateOffline();
-  if (onProgress) onProgress(1, received, total || received);
-  return { bytes: blob.size };
+async function removeStored(meta) {
+  if (meta?.file) {
+    const directory = await navigator.storage.getDirectory();
+    await directory.removeEntry(meta.file).catch(() => {});
+  } else if (meta?.key) await (await openCache()).delete(meta.key);
 }
 
-/** Forget the stored archive. */
+let downloading = false;
+export async function downloadCircle(onProgress, signal) {
+  if (downloading) throw new Error('Ya hay una descarga en curso');
+  const run = async () => {
+    downloading = true;
+    try { return await streamDownload(onProgress, signal); }
+    finally { downloading = false; }
+  };
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('nicanav-map-download', { ifAvailable: true }, lock => {
+      if (!lock) throw new Error('Ya hay una descarga en otra pestaña');
+      return run();
+    });
+  }
+  return run();
+}
+
+async function streamDownload(onProgress, signal) {
+  const cache = await openCache();
+  const previous = await storedArchive().catch(() => null);
+  const abort = new AbortController();
+  const cancel = () => abort.abort(signal?.reason);
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
+  let deadline;
+  const pulse = () => { clearTimeout(deadline); deadline = setTimeout(() => abort.abort(new Error('La descarga se detuvo. Reintentá cuando vuelva la señal.')), 30000); };
+  let meta = {}, writer, reader;
+  try {
+    pulse();
+    const response = await fetch(archiveUrl(), { signal: abort.signal });
+    if (response.status !== 200 || !response.body) throw new Error('No se pudo descargar el mapa completo');
+    const total = Number(response.headers.get('content-length')) || 0;
+    const storage = typeof navigator === 'undefined' ? null : navigator.storage;
+    const estimate = await storage?.estimate?.();
+    if (total && estimate?.quota && estimate.quota - estimate.usage < total * 1.15) throw new Error('No hay espacio suficiente. Liberá espacio antes de descargar.');
+    const id = crypto.randomUUID();
+    meta = { bytes: total, storedAt: new Date().toISOString(), etag: response.headers.get('etag') };
+    let received = 0, headerLength = 0;
+    const header = new Uint8Array(127);
+    const inspect = value => {
+      abort.signal.throwIfAborted(); pulse();
+      if (headerLength < header.length) {
+        const part = value.subarray(0, header.length - headerLength);
+        header.set(part, headerLength); headerLength += part.length;
+        if (headerLength >= 8 && (new TextDecoder().decode(header.subarray(0, 7)) !== 'PMTiles' || header[7] !== 3)) throw new Error('La descarga no es un mapa válido');
+      }
+      received += value.byteLength;
+      if (total && received > total) throw new Error('El tamaño del mapa no coincide');
+      if (onProgress) onProgress(total ? received / total : 0, received, total);
+    };
+    const validate = () => {
+      abort.signal.throwIfAborted();
+      if (headerLength < 127 || (total && received !== total)) throw new Error('La descarga del mapa está incompleta');
+      const view = new DataView(header.buffer);
+      const end = Number(view.getBigUint64(56, true) + view.getBigUint64(64, true));
+      if (!Number.isSafeInteger(end) || end > received) throw new Error('El mapa está truncado');
+      meta.bytes = received;
+    };
+    let blob;
+    if (storage?.getDirectory) {
+      const directory = await storage.getDirectory();
+      meta.file = `nicanav-map-${id}.pmtiles`;
+      const handle = await directory.getFileHandle(meta.file, { create: true });
+      writer = await handle.createWritable();
+      reader = response.body.getReader();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        inspect(value);
+        await writer.write(value); // Backpressure: never accumulate the archive in JS memory.
+      }
+      validate();
+      await writer.close(); writer = null;
+      blob = await handle.getFile();
+    } else {
+      meta.key = new URL(`/offline/nicanav-${id}.pmtiles`, location.origin).href;
+      const stream = response.body.pipeThrough(new TransformStream({
+        transform(value, target) { inspect(value); target.enqueue(value); }, flush: validate,
+      }));
+      await cache.put(meta.key, new Response(stream, { headers: { 'Content-Type': 'application/octet-stream' } }));
+      blob = await (await cache.match(meta.key)).blob();
+    }
+    if (!window.pmtiles) throw new Error('El lector del mapa no está disponible');
+    await new window.pmtiles.PMTiles(new CachedArchiveSource(blob, `check-${id}`)).getHeader();
+    abort.signal.throwIfAborted();
+    // A single pointer replacement commits the validated download. The old
+    // archive survives cancellation, storage failure and captive portals.
+    await cache.put(STORED_ARCHIVE, new Response(JSON.stringify(meta), { headers: { 'Content-Type': 'application/json' } }));
+    await removeStored(previous?.meta).catch(() => {});
+    await activateOffline().catch(() => {});
+    if (onProgress) onProgress(1, received, received);
+    return { bytes: received };
+  } catch (error) {
+    abort.abort();
+    await reader?.cancel().catch(() => {});
+    await writer?.abort().catch(() => {});
+    await removeStored(meta).catch(() => {});
+    throw error;
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener('abort', cancel);
+  }
+}
+
+/** Forget the stored archive after its pointer is removed. */
 export async function clearOffline() {
   try {
+    const stored = await storedArchive();
     const cache = await openCache();
-    await cache.delete(archiveUrl());
+    for (const key of new Set([STORED_ARCHIVE, archiveUrl(), '/tiles/circle.pmtiles'])) await cache.delete(key);
+    await removeStored(stored?.meta);
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 /**
@@ -172,11 +253,9 @@ export async function activateOffline() {
   const pmtiles = /** @type {any} */ (window).pmtiles;
   if (!protocol || !pmtiles) return false;
 
-  const cache = await openCache();
-  const response = await cache.match(archiveUrl());
-  if (!response) return false;
-
-  const blob = await response.blob();
+  const stored = await storedArchive();
+  if (!stored) return false;
+  const blob = await stored.blob();
   const archive = new pmtiles.PMTiles(new CachedArchiveSource(blob, OFFLINE_URL));
   protocol.add(archive);
   return true;
@@ -194,11 +273,17 @@ export async function activateOffline() {
 export function useOfflineSource(map, useOffline) {
   if (!map || typeof map.getStyle !== 'function') return;
   const style = map.getStyle();
-  if (!style || !style.sources || !style.sources.base) return;
-  const next = useOffline ? `pmtiles://${OFFLINE_URL}` : `pmtiles://${CONFIG.tilesBase}/base.pmtiles`;
-  if (style.sources.base.url === next) return;
-  style.sources.base.url = next;
-  map.setStyle(style, { diff: true });
+  if (!style || !style.sources) return;
+  if (useOffline) {
+    if (style.sources.base?.url === `pmtiles://${OFFLINE_URL}`) return;
+    onlineStyles.set(map, structuredClone(style));
+    map.setStyle(offlineStyle(style, true), { diff: true });
+  } else if (onlineStyles.has(map)) {
+    const original = onlineStyles.get(map);
+    onlineStyles.delete(map);
+    map.setStyle(original, { diff: true });
+  }
+
 }
 
 /**
@@ -208,21 +293,24 @@ export function useOfflineSource(map, useOffline) {
  * @param {any} map
  */
 export function autoSwitchOnConnectivity(map) {
+  let disposed = false;
   const update = async () => {
     const status = await offlineStatus();
-    if (!status.present) return;
+    if (disposed || (!navigator.onLine && !status.present)) return;
     if (!navigator.onLine) {
       await activateOffline();
-      useOfflineSource(map, true);
+      if (!disposed) useOfflineSource(map, true);
     } else {
       useOfflineSource(map, false);
     }
   };
-  window.addEventListener('online', update);
-  window.addEventListener('offline', update);
-  update();
+  const schedule = () => update().catch(() => {});
+  window.addEventListener('online', schedule);
+  window.addEventListener('offline', schedule);
+  schedule();
   return () => {
-    window.removeEventListener('online', update);
-    window.removeEventListener('offline', update);
+    disposed = true;
+    window.removeEventListener('online', schedule);
+    window.removeEventListener('offline', schedule);
   };
 }

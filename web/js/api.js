@@ -108,6 +108,7 @@ async function request(target, options = {}) {
   const guard = deadline(signal, timeoutMs);
 
   let response;
+  let text;
   try {
     response = await fetch(target, {
       method,
@@ -115,8 +116,10 @@ async function request(target, options = {}) {
       headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    // Receiving headers does not mean the body has arrived. Keep cancellation
+    // and the deadline alive while a slow mobile connection delivers it.
+    text = await response.text();
   } catch (error) {
-    guard.done();
     // A caller-initiated abort is not a failure to report — it is the caller
     // saying "I no longer care"; let it propagate as the DOMException it is.
     if (signal && signal.aborted) throw error;
@@ -124,11 +127,11 @@ async function request(target, options = {}) {
       throw new ApiError('timeout', 'La conexión está muy lenta. Probá de nuevo.', 0);
     }
     throw new ApiError('network', 'Sin conexión. Revisá tus datos o el wifi.', 0);
+  } finally {
+    guard.done();
   }
-  guard.done();
 
   let payload = null;
-  const text = await response.text().catch(() => '');
   if (text) {
     try {
       payload = JSON.parse(text);

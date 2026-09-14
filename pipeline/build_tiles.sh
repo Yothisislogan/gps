@@ -23,6 +23,9 @@ require_free_space 4096
 PBF="${OSM_DIR}/nicaragua-latest.osm.pbf"
 BASE="${TILES_DIR}/base.pmtiles"
 POIS="${TILES_DIR}/pois.pmtiles"
+# Both builders infer the archive format from the final filename extension.
+BASE_TMP="${TILES_DIR}/base.tmp.pmtiles"
+POIS_TMP="${TILES_DIR}/pois.tmp.pmtiles"
 POI_GEOJSON="${EXPORT_DIR}/pois.geojsonseq"
 SOURCES_DIR="${DATA_DIR}/sources"
 
@@ -35,8 +38,12 @@ build_base() {
     local base="https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}"
     curl -fsSL -o "${PLANETILER_JAR}.tmp" "${base}/planetiler.jar"
     curl -fsSL -o "${PLANETILER_JAR}.sha256" "${base}/planetiler.jar.sha256"
-    ( cd "$(dirname "$PLANETILER_JAR")" && \
-      echo "$(cat "$(basename "$PLANETILER_JAR").sha256")  $(basename "${PLANETILER_JAR}.tmp")" | sha256sum -c - ) \
+    # Releases publish either a bare hash or a standard sha256sum record.
+    # Bind that hash to our temporary file, ignoring the upstream filename.
+    local checksum
+    checksum="$(awk 'NR == 1 {print $1}' "${PLANETILER_JAR}.sha256")"
+    [[ "$checksum" =~ ^[[:xdigit:]]{64}$ ]] || die "invalid planetiler checksum"
+    printf '%s  %s\n' "$checksum" "${PLANETILER_JAR}.tmp" | sha256sum -c - \
       || die "planetiler checksum mismatch"
     publish "${PLANETILER_JAR}.tmp" "$PLANETILER_JAR"
   fi
@@ -67,7 +74,7 @@ build_base() {
   log "building base.pmtiles"
   java -Xmx"${PLANETILER_XMX:-2g}" -jar "$PLANETILER_JAR" \
     --osm-path="$PBF" \
-    --output="${BASE}.tmp" \
+    --output="$BASE_TMP" \
     --force \
     --languages=es,en \
     --nodemap-type=sortedtable \
@@ -79,8 +86,8 @@ build_base() {
 
   # A PMTiles archive starts with the literal magic "PMTiles"; anything else
   # means the build produced something nginx would happily serve as garbage.
-  head -c 7 "${BASE}.tmp" | grep -q "PMTiles" || die "output is not a PMTiles archive"
-  publish "${BASE}.tmp" "$BASE"
+  head -c 7 "$BASE_TMP" | grep -q "PMTiles" || die "output is not a PMTiles archive"
+  publish "$BASE_TMP" "$BASE"
 }
 
 build_pois() {
@@ -90,33 +97,32 @@ build_pois() {
   fi
   require tippecanoe "build from github.com/felt/tippecanoe"
 
-  # -zg picks the max zoom from feature density. --drop-densest-as-needed keeps
-  # tiles under the size limit by thinning the densest cells rather than failing
-  # the build — but per-feature minzoom hints in the GeoJSON (written by the
-  # export job) keep the categories drivers need visible at low zoom.
+  # Use the configured zoom range even for a single POI. Guessing max zoom with
+  # -zg fails on sparse fixtures and conflicts with the explicit maximum below.
+  # Thin dense tiles while retaining the export job's per-feature minzoom hints.
   log "building pois.pmtiles"
   tippecanoe \
-    --output="${POIS}.tmp" \
+    --output="$POIS_TMP" \
     --force \
     --layer=poi \
     --name="nicanav POIs" \
     --attribution="© OpenStreetMap contributors, Overture Maps Foundation" \
-    -zg \
     --minimum-zoom=6 \
     --maximum-zoom=14 \
     --drop-densest-as-needed \
     --extend-zooms-if-still-dropping \
-    --no-tile-size-limit \
+    --maximum-tile-bytes="${NICANAV_POI_TILE_BYTES:-131072}" \
     "$POI_GEOJSON" \
     || die "tippecanoe failed"
 
-  head -c 7 "${POIS}.tmp" | grep -q "PMTiles" || die "tippecanoe output is not a PMTiles archive"
-  publish "${POIS}.tmp" "$POIS"
+  head -c 7 "$POIS_TMP" | grep -q "PMTiles" || die "tippecanoe output is not a PMTiles archive"
+  publish "$POIS_TMP" "$POIS"
 }
 
 build_circle() {
   [ -f "$PBF" ] || die "no OSM extract at ${PBF}; run pipeline/fetch_osm.sh first"
   local circle="${TILES_DIR}/circle.pmtiles"
+  local circle_tmp="${TILES_DIR}/circle.tmp.pmtiles"
   local bounds
   # The same 48.3 km circle the QA clip uses, as a bounding box Planetiler
   # understands (west,south,east,north).
@@ -129,10 +135,22 @@ print(f'{w:.5f},{s:.5f},{e:.5f},{n:.5f}')")"
   # Housenumbers are the single biggest z14 contributor and are close to useless
   # in a country that does not use street numbers — dropping them keeps the
   # download something a Claro data plan can absorb.
-  java -Xmx"${PLANETILER_XMX:-2g}" -jar "$PLANETILER_JAR"     --osm-path="$PBF"     --output="${circle}.tmp"     --force     --languages=es,en     --bounds="$bounds"     --exclude-layers=housenumber     --nodemap-type=sortedtable     --storage=ram     --download-dir="$SOURCES_DIR"     --building-merge-z13=false     || die "planetiler failed for the circle archive"
+  java -Xmx"${PLANETILER_XMX:-2g}" -jar "$PLANETILER_JAR" \
+    --osm-path="$PBF" \
+    --output="$circle_tmp" \
+    --force \
+    --languages=es,en \
+    --bounds="$bounds" \
+    --exclude-layers=housenumber \
+    --nodemap-type=sortedtable \
+    --storage=ram \
+    --download-dir="$SOURCES_DIR" \
+    --threads="${PLANETILER_THREADS:-$(nproc)}" \
+    --building-merge-z13=false \
+    || die "planetiler failed for the circle archive"
 
-  head -c 7 "${circle}.tmp" | grep -q "PMTiles" || die "circle output is not a PMTiles archive"
-  publish "${circle}.tmp" "$circle"
+  head -c 7 "$circle_tmp" | grep -q "PMTiles" || die "circle output is not a PMTiles archive"
+  publish "$circle_tmp" "$circle"
   log "offline archive size: $(du -h "$circle" | cut -f1) — shown to users before they download"
 }
 

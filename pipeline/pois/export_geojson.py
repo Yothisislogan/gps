@@ -197,6 +197,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=exports / "pois_merged.geojsonseq",
         help="used when the database is unreachable",
     )
+    parser.add_argument(
+        "--allow-fallback",
+        action="store_true",
+        help="explicit offline/demo export only; excludes moderation",
+    )
     parser.add_argument("--tiles-output", type=Path, default=exports / "pois.geojsonseq")
     parser.add_argument("--index-output", type=Path, default=exports / "pois_index.jsonl")
     parser.add_argument(
@@ -218,6 +223,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             landmarks = list(iter_from_db(args.dsn, _SELECT_GAZETTEER))
         log.info("read %d POIs and %d landmarks from the database", len(rows), len(landmarks))
     except Exception:
+        if not args.allow_fallback:
+            log.exception("Database export failed; refusing to bypass moderation")
+            return 1
         log.warning("database unavailable; falling back to %s", args.fallback_input, exc_info=True)
         if not args.fallback_input.exists():
             log.error("no fallback input either; nothing to export")

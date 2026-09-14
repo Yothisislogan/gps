@@ -48,16 +48,21 @@ class Settings(BaseSettings):
     pg_port: int = 5432
     pg_db: str = "nicanav"
     pg_user: str = "nicanav"
-    pg_password: str = "nicanav"
+    pg_password: str = ""
 
     # --- filesystem ------------------------------------------------------ #
     data_dir: Path = REPO_ROOT / "data"
     tiles_dir: Path = REPO_ROOT / "data" / "tiles"
 
+    metadata_dir: Path = REPO_ROOT / "data" / "metadata"
+
+    release_state_dir: Path | None = None
+    release_id: str = ""
+
     # --- public surface -------------------------------------------------- #
     public_base_url: str = "http://localhost:8400"
     tiles_base_url: str = "/tiles"
-    cors_origins: str = "*"
+    cors_origins: str = ""
     admin_user: str = "admin"
     admin_password: str = ""
     rate_limit_route: str = "60/minute"
@@ -72,6 +77,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     debug: bool = False
 
+    @field_validator("release_state_dir", mode="before")
+    @classmethod
+    def _optional_state(cls, value):
+        return value or None
+
     @model_validator(mode="after")
     def _compose_database_url(self) -> Settings:
         """Fill in ``database_url`` from the parts when it was not given."""
@@ -83,7 +93,7 @@ class Settings(BaseSettings):
             )
         return self
 
-    @field_validator("data_dir", "tiles_dir", mode="before")
+    @field_validator("data_dir", "tiles_dir", "metadata_dir", mode="before")
     @classmethod
     def _expand(cls, value: str | Path) -> Path:
         return Path(str(value)).expanduser()

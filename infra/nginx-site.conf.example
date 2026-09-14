@@ -28,6 +28,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name mapa.example.ni;
+    access_log off; # coordinates and search text are private
 
     location /.well-known/acme-challenge/ {
         root /var/www/html;
@@ -45,6 +46,7 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name mapa.example.ni;
+    access_log off; # coordinates and search text are private
 
     # HTTP/2 spelling is version dependent and getting it wrong fails nginx -t,
     # which on a reload means the site stays down:
@@ -74,7 +76,6 @@ server {
     # Report photos and GPX uploads arrive over 3G.
     client_body_timeout 120s;
 
-    access_log /var/log/nginx/nicanav.access.log;
     error_log  /var/log/nginx/nicanav.error.log warn;
 
     # -----------------------------------------------------------------------
@@ -169,6 +170,7 @@ server {
         proxy_set_header Host            $host;
         proxy_set_header X-Real-IP       $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # -----------------------------------------------------------------------

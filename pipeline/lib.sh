@@ -10,8 +10,10 @@ DATA_DIR="${NICANAV_DATA_DIR:-${REPO_ROOT}/data}"
 TILES_DIR="${NICANAV_TILES_DIR:-${DATA_DIR}/tiles}"
 OSM_DIR="${DATA_DIR}/osm"
 EXPORT_DIR="${DATA_DIR}/exports"
+METADATA_DIR="${NICANAV_METADATA_DIR:-${DATA_DIR}/metadata}"
 VALHALLA_DIR="${NICANAV_VALHALLA_DIR:-${DATA_DIR}/valhalla}"
-COMPOSE_FILE="${REPO_ROOT}/infra/docker-compose.yml"
+COMPOSE_FILE="${NICANAV_COMPOSE_FILE:-${REPO_ROOT}/infra/docker-compose.yml}"
+COMPOSE_ENV_FILE="${NICANAV_ENV_FILE:-${REPO_ROOT}/infra/.env}"
 
 GEOFABRIK_URL="${NICANAV_GEOFABRIK_URL:-https://download.geofabrik.de/central-america/nicaragua-latest.osm.pbf}"
 PLANETILER_JAR="${PLANETILER_JAR:-${DATA_DIR}/tools/planetiler.jar}"
@@ -26,7 +28,10 @@ require() {
 }
 
 ensure_dirs() {
-  mkdir -p "$OSM_DIR" "$TILES_DIR" "$EXPORT_DIR" "$VALHALLA_DIR" "${DATA_DIR}/tools" "${DATA_DIR}/backups"
+  if [ "${NICANAV_MANAGED_RELEASE:-0}" = 1 ] && [ "${NICANAV_CANDIDATE:-0}" != 1 ]; then
+    die "managed data must be refreshed through scripts/releases.py"
+  fi
+  mkdir -p "$OSM_DIR" "$TILES_DIR" "$EXPORT_DIR" "$VALHALLA_DIR" "${DATA_DIR}/tools" "${DATA_DIR}/backups" "$METADATA_DIR"
 }
 
 # publish <tmp> <final>
@@ -72,4 +77,36 @@ wait_for_http() {
   log "ready: ${url}"
 }
 
-compose() { docker compose -f "$COMPOSE_FILE" --env-file "${REPO_ROOT}/infra/.env" "$@"; }
+compose() { docker compose -f "$COMPOSE_FILE" --env-file "$COMPOSE_ENV_FILE" "$@"; }
+
+# The lock is held by callers for the complete refresh. EXIT records failures,
+# including signals; a killed process leaves "running" rather than fake success.
+record_status() {
+  (cd "$REPO_ROOT" && python3 -m pipeline.status "$METADATA_DIR" "$SCRIPT_NAME" "$@")
+}
+
+start_run() {
+  CURRENT_STAGE="starting"
+  record_status start --scope "${1:-full}"
+  trap 'run_exit $?' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+}
+
+run_exit() {
+  local code="$1"
+  if [ "$code" -ne 0 ]; then
+    record_status failed --stage "$CURRENT_STAGE" || true
+    log "refresh failed at: $CURRENT_STAGE; earlier steps may already be published"
+  fi
+}
+
+step() {
+  CURRENT_STAGE="$1"; shift
+  record_status running --stage "$CURRENT_STAGE"
+  log "=== $CURRENT_STAGE ==="
+  # Do not invoke this function in an if/|| context: Bash would disable -e
+  # for shell functions used as step commands.
+  "$@"
+  log "=== $CURRENT_STAGE: ok ==="
+}
