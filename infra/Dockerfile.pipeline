@@ -45,7 +45,7 @@ RUN mkdir -p /opt/planetiler \
     && curl -fsSL -o /opt/planetiler/planetiler.jar.sha256 \
         "https://github.com/onthegomap/planetiler/releases/download/v${PLANETILER_VERSION}/planetiler.jar.sha256" \
     && cd /opt/planetiler \
-    && echo "$(cat planetiler.jar.sha256)  planetiler.jar" | sha256sum -c -
+    && awk 'NR == 1 {print $1 "  planetiler.jar"}' planetiler.jar.sha256 | sha256sum -c -
 
 WORKDIR /app
 COPY requirements/base.txt requirements/pipeline.txt /app/requirements/

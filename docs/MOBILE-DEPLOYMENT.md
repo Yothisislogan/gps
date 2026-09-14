@@ -57,6 +57,23 @@ commit that passed CI. Install Docker/Compose, Python 3.11+, Node 22+, OpenSSL,
 nginx and the pipeline prerequisites in [RUNBOOK.md](RUNBOOK.md) (including Java,
 osmium, jq and tippecanoe). Keep a Python virtualenv at `/opt/nicanav/.venv`.
 
+On an existing Ubuntu host with Docker, Java, osmium and the Python environment
+already available, `sudo bash scripts/install_host_tools.sh` installs the remaining
+native build prerequisites, compiles pinned tippecanoe under `/opt/nicanav-tools`
+with a two-CPU/3 GiB limit, and builds web assets using Node 22 in a two-CPU/2 GiB
+Docker container. Node is not installed globally. The script sets needrestart to
+list-only mode; it does not start NicaNav services. Add `/opt/nicanav-tools/bin`
+to the pipeline PATH. If using this container-based Node build, perform runtime
+configuration with `NICANAV_ENV_FILE=infra/.env .venv/bin/python scripts/prepare_deploy.py`
+and rerun the container's `npm run release` before serving `dist/web`; `make prepare`
+still expects a host `npm` command.
+
+The first-import regression job runs real osmium and tippecanoe on tiny fixtures.
+OSM temporary files have an explicit PBF format; tile temporary files retain their
+`.pmtiles` suffix so both tile builders choose the correct writer. Planetiler's
+checksum accepts the upstream `hash filename` record as well as a bare hash.
+These checks do not replace an initial country build and live route validation.
+
 1. Copy `infra/.env.example` to `infra/.env`, make it mode 600, generate unique
    secrets, and set the exact HTTPS origin in `NICANAV_PUBLIC_BASE_URL` and
    `NICANAV_CORS_ORIGINS`. Use absolute data paths in deployment configurations.

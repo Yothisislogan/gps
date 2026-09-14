@@ -49,7 +49,7 @@ else
   fi
   rm -f "${TMP}.md5"
 
-  osmium fileinfo "$TMP" >/dev/null || die "downloaded file is not a valid PBF"
+  osmium fileinfo --input-format=pbf "$TMP" >/dev/null || die "downloaded file is not a valid PBF"
   publish "$TMP" "$PBF"
 fi
 
@@ -63,7 +63,7 @@ if [ ! -f "$CIRCLE" ]; then
 fi
 
 log "clipping the 48.3 km circle for QA"
-osmium extract --overwrite --polygon "$CIRCLE" "$PBF" -o "${CLIP}.tmp"
+osmium extract --overwrite --output-format=pbf --polygon "$CIRCLE" "$PBF" -o "${CLIP}.tmp"
 publish "${CLIP}.tmp" "$CLIP"
 
 log "extract statistics"  # long-form flags only: -e is --expressions on tags-filter and --extended here
@@ -73,7 +73,7 @@ osmium fileinfo --extended "$CLIP" | sed -n '1,40p' >&2
 # Doing the filtering with osmium keeps a full OSM parser out of Python.
 POI_PBF="${OSM_DIR}/pois.osm.pbf"
 log "filtering POI tags"
-osmium tags-filter --overwrite "$PBF" \
+osmium tags-filter --overwrite --output-format=pbf "$PBF" \
   nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/healthcare \
   nwr/craft nwr/aeroway=aerodrome nwr/public_transport=station nwr/place \
   nwr/highway=milestone nwr/junction=roundabout \
@@ -91,7 +91,7 @@ osmium export "$POI_PBF" \
 publish "${EXPORT_DIR}/osm_pois.geojsonseq.tmp" "${EXPORT_DIR}/osm_pois.geojsonseq"
 
 log "exporting the circle's road network for KPIs"
-osmium tags-filter --overwrite "$CLIP" w/highway -o "${OSM_DIR}/roads.osm.pbf.tmp"
+osmium tags-filter --overwrite --output-format=pbf "$CLIP" w/highway -o "${OSM_DIR}/roads.osm.pbf.tmp"
 publish "${OSM_DIR}/roads.osm.pbf.tmp" "${OSM_DIR}/roads.osm.pbf"
 osmium export "${OSM_DIR}/roads.osm.pbf" --overwrite --geometry-types=linestring \
   --output-format=geojsonseq -o "${EXPORT_DIR}/roads.geojsonseq.tmp"
