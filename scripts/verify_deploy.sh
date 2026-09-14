@@ -9,7 +9,10 @@
 
 set -euo pipefail
 
-BASE="${1:-http://localhost:8080}"
+# Must match the compose file's published port (NICANAV_HTTP_PORT, default
+# 8400). A verify run against the wrong port fails every check and looks like
+# a broken deploy.
+BASE="${1:-http://127.0.0.1:${NICANAV_HTTP_PORT:-8400}}"
 VALHALLA="${NICANAV_VALHALLA_URL:-http://localhost:8002}"
 FAILURES=0
 

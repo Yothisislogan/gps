@@ -1,0 +1,12 @@
+[Unit]
+Description=nicanav daily Overture release check (03:30 Managua)
+
+[Timer]
+Unit=nicanav-overture.service
+# The importer skips an unchanged release after a successful publication.
+OnCalendar=*-*-* 03:30:00 America/Managua
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

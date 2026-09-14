@@ -1,0 +1,13 @@
+[Unit]
+Description=nicanav database backup (01:45 Managua, before the nightly build)
+
+[Timer]
+Unit=nicanav-backup.service
+# Half an hour ahead of the build, so the backup is of a database the build has
+# not yet touched.
+OnCalendar=*-*-* 01:45:00 America/Managua
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

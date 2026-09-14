@@ -58,6 +58,7 @@ vendor:  ## Build locked browser dependencies for local/offline startup
 
 prepare: vendor  ## Generate public config and nginx admin credentials
 	NICANAV_ENV_FILE=infra/.env $(PYTHON) scripts/prepare_deploy.py
+	npm run release
 
 up: prepare  ## Start the stack
 	$(COMPOSE) up -d

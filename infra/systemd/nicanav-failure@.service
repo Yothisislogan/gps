@@ -1,0 +1,18 @@
+# OnFailure target for every nicanav job. It does not page anyone — it makes
+# the failure impossible to miss from the shell, which is the level of alerting
+# this box actually has.
+#
+#   systemctl list-units 'nicanav-*'
+#   cat /var/lib/nicanav/last-failure
+[Unit]
+Description=nicanav: %i failed
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '\
+  mkdir -p /var/lib/nicanav; \
+  { echo "%i failed at $(date -uIseconds)"; \
+    echo; \
+    journalctl -u "%i" -n 40 --no-pager; \
+  } > /var/lib/nicanav/last-failure; \
+  logger -t nicanav -p daemon.err "%i FAILED — see /var/lib/nicanav/last-failure"'

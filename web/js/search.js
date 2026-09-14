@@ -13,8 +13,9 @@
  */
 
 import * as api from './api.js';
+import { favorites } from './favorites.js';
 import { CHIPS, CONFIG, categoryLabel } from './config.js';
-import { clear, el, errorBlock, formatDistance, isOffline, spinner, t } from './ui.js';
+import { clear, el, errorBlock, formatDistance, getLanguage, isOffline, spinner, t } from './ui.js';
 
 const RECENT_KEY = 'nicanav.recent';
 
@@ -71,16 +72,16 @@ export function renderChips(container, onPick) {
     const button = el('button', {
       class: 'chip',
       type: 'button',
-      text: chip.label,
+      text: getLanguage() === 'en' ? chip.en : chip.es,
       dataset: { category: chip.category },
       'aria-pressed': 'false',
       onClick: () => {
-        const next = active === chip.category ? null : chip.category;
+        const next = active === chip.id ? null : chip.id;
         active = next;
         for (const node of container.querySelectorAll('.chip')) {
           node.setAttribute('aria-pressed', String(node === button && next !== null));
         }
-        onPick(next);
+        onPick(next ? chip : null);
       },
     });
     container.appendChild(button);
@@ -164,7 +165,7 @@ export function renderResults(container, payload, handlers) {
       meta: candidateMeta(candidate),
       badges: [
         {
-          text: `${Math.round((candidate.confidence || 0) * 100)}%`,
+          text: t('poi.approximate'),
           kind: 'confidence',
         },
       ],
@@ -191,8 +192,10 @@ export function renderResults(container, payload, handlers) {
   if (!groups.length) {
     container.appendChild(
       el('div', { class: 'empty' }, [
-        el('div', { text: t('search.empty') }),
+        el('div', { text: t('search.empty', { q: payload.query || '' }) }),
         el('div', { class: 'empty__hint', text: t('search.empty.hint') }),
+        handlers.onWiden ? el('button', { class: 'btn', type: 'button', text: t('search.widen'), onClick: handlers.onWiden }) : null,
+        handlers.onPin ? el('button', { class: 'btn', type: 'button', text: t('search.pin'), onClick: handlers.onPin }) : null,
       ]),
     );
     return;
@@ -203,16 +206,17 @@ export function renderResults(container, payload, handlers) {
 /** Render the recent-search list shown before anything is typed. */
 export function renderRecents(container, handlers) {
   clear(container);
+  const saved = favorites();
+  container.appendChild(el('div', { class: 'welcome' }, [
+    el('h1', { text: t('search.welcome') }),
+    el('p', { text: t('search.welcomeHint') }),
+    el('div', { class: 'favorites' }, ['home', 'work'].map(kind => el('button', {
+      class: 'btn', type: 'button', text: t(`search.${kind}`),
+      onClick: () => saved[kind] ? handlers.onFavorite?.(saved[kind]) : handlers.onSaveFavorite?.(kind),
+    }))),
+  ]));
   const recents = recentSearches();
-  if (!recents.length) {
-    container.appendChild(
-      el('div', { class: 'empty' }, [
-        el('div', { text: t('search.empty') }),
-        el('div', { class: 'empty__hint', text: t('search.empty.hint') }),
-      ]),
-    );
-    return;
-  }
+  if (!recents.length) return;
   const rows = recents.map((entry) =>
     resultRow({
       glyph: '↺',
@@ -319,32 +323,43 @@ export function createSearch(context) {
   if (!input || !results) return null;
 
   let activeCategory = null;
+  let activeQuery = '';
+  let wide = false;
 
   const show = (visible) => {
     results.hidden = !visible;
+    document.body.classList.toggle('has-results', visible);
+    input.setAttribute('aria-expanded', String(visible));
+    if (!visible) { clearTimeout(debounceTimer); inFlight?.abort(); }
     if (backButton) backButton.hidden = !visible;
     if (clearButton) clearButton.hidden = !input.value;
   };
 
   const handlers = {
+    onWiden() { wide = true; activeCategory = null; run(); },
+    onPin() { show(false); input.blur(); context.choosePoint?.(); },
+    onFavorite(place) { show(false); input.blur(); context.openPointCard(place); },
+    onSaveFavorite(kind) { show(false); input.blur(); context.chooseFavorite?.(kind); },
     onPlace(hit) {
+      context.selected = hit;
       rememberSearch({ q: input.value || hit.name, id: hit.id, name: hit.name, lat: hit.lat, lon: hit.lon });
       show(false);
       input.blur();
-      context.map.setMarker('selected', hit.lat, hit.lon, { kind: 'selected', title: hit.name });
-      context.map.flyTo(hit.lat, hit.lon, { zoom: 17 });
+      context.map?.setMarker('selected', hit.lat, hit.lon, { kind: 'selected', title: hit.name });
+      context.map?.flyTo(hit.lat, hit.lon, { zoom: 17 });
       if (hit.kind === 'poi' && hit.id) context.openPlaceCard(hit.id);
       else context.openPointCard({ lat: hit.lat, lon: hit.lon, name: hit.name });
     },
     onCandidate(candidate) {
+      context.selected = candidate;
       rememberSearch({ q: input.value, name: candidate.label, lat: candidate.lat, lon: candidate.lon });
       show(false);
       input.blur();
-      context.map.setMarker('selected', candidate.lat, candidate.lon, {
+      context.map?.setMarker('selected', candidate.lat, candidate.lon, {
         kind: 'selected',
         title: candidate.label,
       });
-      context.map.flyTo(candidate.lat, candidate.lon, { zoom: 17 });
+      context.map?.flyTo(candidate.lat, candidate.lon, { zoom: 17 });
       context.openPointCard({
         lat: candidate.lat,
         lon: candidate.lon,
@@ -358,13 +373,16 @@ export function createSearch(context) {
     },
     onRecent(entry) {
       input.value = entry.q;
-      run();
+      if (Number.isFinite(entry.lat) && Number.isFinite(entry.lon)) {
+        show(false); input.blur(); context.openPointCard(entry);
+      } else run();
     },
   };
 
   function run() {
     show(true);
-    const query = input.value;
+    clearTimeout(debounceTimer); inFlight?.abort();
+    const query = input.value || activeQuery;
     if (!query.trim() && !activeCategory) {
       renderRecents(results, handlers);
       return;
@@ -373,18 +391,22 @@ export function createSearch(context) {
       renderState(results, 'offline');
       return;
     }
-    const fix = context.getPosition();
+    const fix = wide ? null : context.getPosition();
     runSearch(query, {
       lat: fix ? fix.lat : undefined,
       lon: fix ? fix.lon : undefined,
       category: activeCategory,
       onStart: () => renderState(results, 'loading'),
-      onDone: (payload) => renderResults(results, payload, handlers),
+      onDone: (payload) => {
+        renderResults(results, { ...payload, query }, handlers);
+        context.showResults?.(payload.hits || [], handlers.onPlace);
+      },
       onError: () => renderState(results, 'error', run),
     });
   }
 
-  input.addEventListener('input', run);
+  input.addEventListener('input', () => { wide = false; activeCategory = null; activeQuery = ''; run(); });
+  input.addEventListener('keydown', event => { if (event.key === 'Escape') { show(false); input.blur(); } });
   input.addEventListener('focus', () => {
     if (!input.value) renderRecents(results, handlers);
     show(true);
@@ -398,7 +420,7 @@ export function createSearch(context) {
   }
   if (clearButton) {
     clearButton.addEventListener('click', () => {
-      input.value = '';
+      input.value = ''; activeQuery = ''; activeCategory = null;
       input.focus();
       run();
     });
@@ -411,9 +433,11 @@ export function createSearch(context) {
   }
 
   if (chips) {
-    renderChips(chips, async (category) => {
-      activeCategory = category;
-      if (!category) {
+    renderChips(chips, async (chip) => {
+      activeCategory = chip?.category || null;
+      activeQuery = chip?.query || '';
+      input.value = activeQuery;
+      if (!chip) {
         show(false);
         return;
       }
@@ -433,7 +457,7 @@ export function createSearch(context) {
   // The manifest's shortcuts ("Gasolineras cerca") land here.
   const requested = new URLSearchParams(window.location.search).get('chip');
   if (requested) {
-    activeCategory = requested;
+    activeCategory = CHIPS.find(chip => chip.category === requested)?.category || null;
     const chipButton = chips && chips.querySelector(`.chip[data-category="${requested}"]`);
     if (chipButton) chipButton.setAttribute('aria-pressed', 'true');
     context
@@ -442,5 +466,6 @@ export function createSearch(context) {
       .finally(run);
   }
 
+  if (!requested) { renderRecents(results, handlers); show(true); }
   return { run, show };
 }

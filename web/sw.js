@@ -8,7 +8,7 @@
  * (a `.pmtiles` archive is read with byte ranges, and a 206 cannot be cached).
  */
 
-const VERSION = 'v3';
+const VERSION = 'development-v5';
 const SHELL_CACHE = `nicanav-shell-${VERSION}`;
 const ASSET_CACHE = `nicanav-assets-${VERSION}`;
 
@@ -33,6 +33,8 @@ const SHELL = [
   '/js/api.js',
   '/js/config.js',
   '/js/map.js',
+  '/js/updates.js',
+  '/js/favorites.js',
   '/js/poi.js',
   '/js/search.js',
   '/js/share.js',
@@ -42,6 +44,9 @@ const SHELL = [
   '/js/nav.js',
   '/js/navmath.js',
   '/js/voice.js',
+  // nav.js imports this statically, so leaving it out breaks offline
+  // navigation with a module-resolution error rather than a missing feature.
+  '/js/simulator.js',
   '/js/offline.js',
   '/js/offline-style.js',
   '/style/nicanav.json',
@@ -51,6 +56,11 @@ const SHELL = [
   '/sprites/nicanav@2x.json',
   '/sprites/nicanav@2x.png',
   '/manifest.webmanifest',
+  '/icons/favicon.svg',
+  '/icons/apple-touch-icon.png',
+  '/icons/app-192.png',
+  '/icons/app-512.png',
+  '/icons/app-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -58,23 +68,13 @@ self.addEventListener('install', (event) => {
     caches
       .open(SHELL_CACHE)
       // Keep the previous worker if this release cannot cache its full shell.
-      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
-      .then(() => self.skipWaiting()),
+      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' })))),
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((names) =>
-        Promise.all(
-          names
-            .filter((name) => name.startsWith('nicanav-') && !name.endsWith(VERSION) && !name.startsWith('nicanav-offline'))
-            .map((name) => caches.delete(name)),
-        ),
-      )
-      .then(() => self.clients.claim()),
+    self.clients.claim(),
   );
 });
 
@@ -107,47 +107,24 @@ self.addEventListener('fetch', (event) => {
     (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/@'));
   if (!navigation && !SHELL.includes(url.pathname) && !isImmutableAsset(url)) return;
 
-  if (isImmutableAsset(url)) {
-    event.respondWith(
-      caches.match(request).then(
-        (hit) =>
-          hit ||
-          fetch(request).then((response) => {
-            if (canCache(response)) {
-              const copy = response.clone();
-              event.waitUntil(caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy)).catch(() => {}));
-            }
-            return response;
-          }),
-      ),
-    );
-    return;
-  }
-
-  // The shell: network first with a short timeout, cache as the safety net.
-  // A driver who has lost signal still gets the app; one who has not gets the
-  // current version without a hard refresh.
-  const fallback = async () => (await caches.match(request)) ||
-    (navigation && await caches.match('/index.html')) ||
-    new Response('Sin conexión', {
-      status: 503,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
-  const network = fetch(request).then(async (response) => {
-    if (canCache(response)) {
-      try {
-        const cache = await caches.open(SHELL_CACHE);
-        await cache.put(navigation ? '/index.html' : request, response.clone());
-      } catch { /* Quota/private mode must not turn an online response into an error. */ }
-    }
-    return response.status >= 500 ? fallback() : response;
-  }).catch(fallback);
-  event.waitUntil(network.then(() => undefined));
-  let timer;
-  event.respondWith(Promise.race([
-    network,
-    new Promise((resolve) => { timer = setTimeout(() => resolve(fallback()), 3000); }),
-  ]).finally(() => clearTimeout(timer)));
+  // Every installed shell belongs to one content-addressed release. A warm
+  // start reads it immediately, even on a connection that is nominally online.
+  const fallback = () => new Response('Sin conexión', { status: 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const path = navigation ? '/index.html' : url.pathname;
+  event.respondWith(caches.open(SHELL_CACHE).then(async (cache) => {
+    const hit = await cache.match(path);
+    if (hit) return hit;
+    let timer;
+    const network = fetch(request).then(async (response) => {
+      if (canCache(response)) await cache.put(path, response.clone()).catch(() => {});
+      return response;
+    }).catch(fallback);
+    event.waitUntil(network.then(() => undefined));
+    return Promise.race([network, new Promise(resolve => {
+      timer = setTimeout(() => resolve(fallback()), 3000);
+    })]).finally(() => clearTimeout(timer));
+  }));
 });
 
 function canCache(response) {
@@ -155,7 +132,17 @@ function canCache(response) {
     !/no-store|private/i.test(response.headers.get('cache-control') || '');
 }
 
-// Lets a new version take over without waiting for every tab to close.
+// A waiting release checks every open tab; a trip in another tab blocks it.
 self.addEventListener('message', (event) => {
-  if (event.data === 'skip-waiting') self.skipWaiting();
+  if (event.data !== 'activate-update') return;
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const states = await Promise.all(clients.map(client => new Promise(resolve => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => { channel.port1.close(); resolve(true); }, 1500);
+      channel.port1.onmessage = reply => { clearTimeout(timer); channel.port1.close(); resolve(reply.data?.busy !== false); };
+      client.postMessage('update-check', [channel.port2]);
+    })));
+    if (!states.some(Boolean)) await self.skipWaiting();
+  })());
 });

@@ -33,6 +33,7 @@ import {
   snapToRoute,
   spokenDistance,
 } from './navmath.js';
+import { createPositionSource, simulatorOptions } from './simulator.js';
 import { el, formatDuration, t, toast } from './ui.js';
 import { cancelSpeech, isVoiceEnabled, primeVoices, setVoiceEnabled, speak } from './voice.js';
 
@@ -259,6 +260,10 @@ function adoptRoute(response) {
   session.spoken = new Set();
   const shape = (response.trip?.legs || []).map((leg) => leg.shape).filter(Boolean)[0];
   if (shape) session.map?.showRoute(shape, { fit: false });
+  // A simulated drive has to follow the new line too. Left on the old one it
+  // would go off route again immediately, and the reroute loop that produces
+  // looks exactly like a bug in rerouting.
+  session.source?.adoptShape?.(session.plan.shape);
   persist();
 }
 
@@ -342,6 +347,7 @@ export async function startNavigation(options) {
   const root = document.getElementById('nav-root');
   if (!root) throw new Error('nav-root is missing from the shell');
 
+  document.body.classList.add('navigating');
   const plan = normalizeRoute(options.route, { lang: 'es' });
 
   const owner = session = {
@@ -360,6 +366,7 @@ export async function startNavigation(options) {
     onEnd: options.onEnd,
     wakeLock: null,
     wakeLockPending: false,
+    source: null,
     watchId: null,
     unwatchVisibility: null,
   };
@@ -376,12 +383,27 @@ export async function startNavigation(options) {
   }
   owner.unwatchVisibility = watchVisibility(owner);
 
-  if (!('geolocation' in navigator)) {
+  // ?sim=1 / ?gpx= replace the receiver and nothing else: every line below
+  // this one runs identically on a simulated drive and a real one.
+  const sim = simulatorOptions();
+  const source =
+    (await createPositionSource({ shape: plan.shape, options: sim })) ??
+    ('geolocation' in navigator ? navigator.geolocation : null);
+
+  if (session !== owner) return;
+  owner.source = source;
+  if (!owner.source) {
     toast(t('dir.noPosition'), { kind: 'error' });
     stopNavigation();
     return;
   }
-  owner.watchId = navigator.geolocation.watchPosition((fix) => onFix(fix, owner), (error) => {
+  if (sim.enabled) {
+    toast(
+      sim.gpx ? 'Simulación: reproduciendo GPX' : `Simulación a ${Math.round(sim.speedKmh)} km/h`,
+      { durationMs: 6000 },
+    );
+  }
+  owner.watchId = owner.source.watchPosition((fix) => onFix(fix, owner), (error) => {
     if (session !== owner) return;
     toast(t('dir.noPosition'), { kind: 'error' });
     if (error.code === 1) stopNavigation();
@@ -407,8 +429,8 @@ export function stopNavigation() {
   session = null;
   owner.rerouteController?.abort();
   cancelSpeech();
-  if (owner.watchId !== null && 'geolocation' in navigator) {
-    navigator.geolocation.clearWatch(owner.watchId);
+  if (owner.watchId !== null) {
+    owner.source?.clearWatch(owner.watchId);
   }
   if (owner.wakeLock) {
     try {
@@ -430,6 +452,8 @@ export function stopNavigation() {
     /* ignore */
   }
 
+  document.body.classList.remove('navigating');
+  window.dispatchEvent?.(new Event('nicanav-navigation-ended'));
   const { onEnd } = owner;
   if (onEnd) onEnd();
 }

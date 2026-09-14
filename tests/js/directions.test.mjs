@@ -31,13 +31,14 @@ beforeEach(() => {
 afterEach(() => { stopNavigation(); mock.restoreAll(); });
 
 function buttons() { return findAll(sheet.body, (node) => node.tagName === 'BUTTON'); }
+function alternate(index) { findAll(sheet.body, node => node.className === 'route__alt')[index].dispatchEvent(new Event('click')); }
 function click(label) { buttons().find((node) => node.textContent.includes(label)).dispatchEvent(new Event('click')); }
 
 test('selecting an alternate changes the map and summary; Start uses that exact route', async () => {
   await openDirections({ lat: 12.10, lon: -86.25 }, context);
-  click('Ruta 2');
+  alternate(1);
   assert.equal(shown.at(-1), second.trip.legs[0].shape);
-  assert.ok(buttons().some((node) => node.textContent.includes('Ruta 2') && node.getAttribute('aria-pressed') === 'true'));
+  assert.ok(buttons().some((node) => node.textContent.includes('4') && node.getAttribute('aria-pressed') === 'true'));
   const distance = findAll(sheet.body, (node) => node.className === 'route__distance')[0];
   assert.match(distance.textContent, /4/);
   click('Empezar');
@@ -47,7 +48,7 @@ test('selecting an alternate changes the map and summary; Start uses that exact 
 
 test('the original route remains selectable after choosing an alternate', async () => {
   await openDirections({ lat: 12.10, lon: -86.25 }, context);
-  click('Ruta 2'); click('Ruta 1');
+  alternate(1); alternate(0);
   assert.equal(shown.at(-1), first.trip.legs[0].shape);
 });
 

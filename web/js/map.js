@@ -13,10 +13,12 @@
  */
 
 import { CONFIG, isNight } from './config.js';
-import { el, sheet, t, toast, getLanguage, onLanguageChange, setLanguage, clear } from './ui.js';
+import { el, icon, sheet, t, toast, getLanguage, onLanguageChange, setLanguage, clear } from './ui.js';
 import { createSearch } from './search.js';
-import { openPlaceCard, openPointCard, openDirections, openReport } from './poi.js';
+import { openPlaceCard, openPointCard, openDirections, openReport, choosePoint } from './poi.js';
 import { parseDeepLink, writeDeepLink, openShareSheet } from './share.js';
+import { setupUpdates } from './updates.js';
+import { saveFavorite } from './favorites.js';
 
 /** Source and layer ids this module owns; everything else belongs to the style. */
 const ROUTE_SOURCE = 'nicanav-route';
@@ -235,6 +237,9 @@ export async function createMap(options) {
       center: options.center || CONFIG.center,
       zoom: options.zoom ?? CONFIG.zoom,
       maxZoom: CONFIG.maxZoom,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, CONFIG.maxPixelRatio || 2),
+      maxTileCacheSize: 64,
+      cancelPendingTileRequestsWhileZooming: true,
       // The shell draws its own always-visible attribution block, sized to a
       // 44 px tap target; MapLibre's would be a second, smaller copy.
       attributionControl: false,
@@ -407,11 +412,9 @@ export async function createMap(options) {
     if (options.onLongPress) options.onLongPress({ lat: event.lngLat.lat, lon: event.lngLat.lng });
   });
 
-  await new Promise((resolve) => {
-    if (map.loaded()) resolve(undefined);
-    else map.once('load', () => resolve(undefined));
-  });
-  findPoiLayers();
+  // The controls do not depend on tiles. Never hold the app behind map load.
+  if (map.loaded()) options.onReady?.();
+  else map.once('load', () => options.onReady?.());
 
   /**
    * Padding that keeps the route clear of the search bar and the bottom sheet.
@@ -474,6 +477,9 @@ export async function createMap(options) {
       ]);
       element.setAttribute('aria-label', markerOptions.title || markerOptions.label || t('locate.title'));
       if (markerOptions.onClick) {
+        element.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); markerOptions.onClick(); }
+        });
         element.addEventListener('click', (event) => {
           event.stopPropagation();
           markerOptions.onClick();
@@ -492,8 +498,7 @@ export async function createMap(options) {
         zoom: flyOptions.zoom ?? Math.max(map.getZoom(), 16),
         padding: flyOptions.padding || padding(),
         // A slow cinematic fly is charming once and irritating while driving.
-        duration: flyOptions.duration ?? 600,
-        essential: true,
+        duration: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : (flyOptions.duration ?? 350),
       });
     },
 
@@ -530,11 +535,13 @@ export async function createMap(options) {
     },
 
     setNightMode(on) {
+      const changed = nightMode !== Boolean(on);
       nightMode = Boolean(on);
+      document.documentElement.classList.toggle('night', nightMode);
       document.documentElement.dataset.theme = nightMode ? 'night' : 'day';
       const container = map.getContainer();
       if (CONFIG.styleUrlNight) {
-        map.setStyle(nightMode ? CONFIG.styleUrlNight : CONFIG.styleUrl);
+        if (changed) map.setStyle(nightMode ? CONFIG.styleUrlNight : CONFIG.styleUrl);
         container.classList.remove('map--dimmed');
       } else {
         // No dark style shipped: dim the canvas instead.  A full-brightness map
@@ -616,7 +623,7 @@ function startPositionWatch(controller) {
 
 /** @returns {{lat: number, lon: number, accuracy: number, heading: number|null, speed: number|null, at: number}|null} */
 function getPosition() {
-  return positionState.fix;
+  return positionState.fix && Date.now() - positionState.fix.at < 30000 ? positionState.fix : null;
 }
 
 /**
@@ -632,7 +639,10 @@ function requestPosition() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
+      (position) => {
+        positionState.fix = { lat: position.coords.latitude, lon: position.coords.longitude, at: Date.now() };
+        resolve(positionState.fix);
+      },
       (error) => reject(error),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
@@ -690,7 +700,7 @@ function offlineRow(controller) {
         const state = await offline.offlineStatus();
         clear(buttons);
         if (state.present) {
-          status.textContent = `Descargado: ${(state.bytes / 1e6).toFixed(0)} MB`;
+          status.textContent = `Descargado: ${(state.bytes / 1e6).toFixed(0)} MB · ${state.storedAt ? new Date(state.storedAt).toLocaleDateString('es-NI') : ''}`;
           buttons.appendChild(
             el('button', {
               class: 'segment',
@@ -698,7 +708,7 @@ function offlineRow(controller) {
               text: 'Borrar',
               onClick: async () => {
                 await offline.clearOffline();
-                offline.useOfflineSource(controller.map, false);
+                offline.useOfflineSource(controller?.map, false);
                 refresh();
               },
             }),
@@ -718,16 +728,21 @@ function offlineRow(controller) {
               const button = event.currentTarget;
               button.disabled = true;
               progress.hidden = false;
+              const abort = new AbortController();
+              const cancel = el('button', { type: 'button', class: 'segment', text: t('common.cancel'), onClick: () => abort.abort() });
+              buttons.appendChild(cancel);
               try {
                 await offline.downloadCircle((fraction) => {
                   bar.style.width = `${Math.round(fraction * 100)}%`;
-                });
+                  status.textContent = `${Math.round(fraction * 100)}%`;
+                }, abort.signal);
                 const registration = await navigator.serviceWorker?.getRegistration();
                 toast(registration?.active ? 'Mapa descargado' : 'Mapa guardado; la aplicación aún no está lista sin conexión');
                 refresh();
               } catch (error) {
                 toast(String((error && error.message) || error), { kind: 'error' });
               } finally {
+                cancel.remove();
                 button.disabled = false;
                 progress.hidden = true;
               }
@@ -807,140 +822,113 @@ function openSettings(controller, applyTheme) {
 }
 
 /** Wire the shell once the map exists. */
-async function bootstrap() {
+export async function bootstrap() {
   const container = document.getElementById('map');
   if (!container) return;
-
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      /* no offline shell; everything still works online */
-    });
-  }
-
   sheet.mount();
   document.documentElement.lang = getLanguage();
-
-  const link = parseDeepLink(window.location.pathname + window.location.hash);
-  let controller;
-  try {
-    controller = await createMap({
-      container,
-      center: link ? [link.lon, link.lat] : undefined,
-      zoom: link ? link.zoom : undefined,
-      onPoiClick: (hit) => {
-        if (hit.id) openPlaceCard(hit.id, context);
-        else openPointCard({ lat: hit.lat, lon: hit.lon, name: hit.name }, context);
-      },
-      onMapClick: () => {
-        if (sheet.isOpen()) sheet.close();
-      },
-      onLongPress: (point) => openPointCard(point, context),
-    });
-  } catch (error) {
-    console.error('nicanav: map failed to start', error);
-    showMapFallback();
-    return;
-  }
-
-  /**
-   * The context handed to every screen: the map, where the driver is, and how
-   * to open the other screens.  Passing it explicitly is what keeps the modules
-   * free of import cycles and of globals.
-   */
+  let controller = null;
   const context = {
-    map: controller,
-    getPosition,
-    requestPosition,
+    map: null, getPosition, requestPosition,
     openPlaceCard: (id) => openPlaceCard(id, context),
     openPointCard: (point) => openPointCard(point, context),
     openDirections: (destination) => openDirections(destination, context),
     openShare: (point) => openShareSheet(point, context),
     openReport: () => openReport(context),
+    choosePoint: () => choosePoint(context, null, point => openPointCard(point, context)),
+    chooseFavorite: kind => choosePoint(context, null, point => { saveFavorite(kind, point); toast(t('poi.saved')); }),
+    showResults: (hits, onSelect) => {
+      for (let i = 0; i < 12; i++) {
+        const hit = hits[i];
+        controller?.setMarker(`result-${i}`, hit?.lat ?? null, hit?.lon ?? null, {
+          title: hit?.name, label: String(i + 1), onClick: () => onSelect(hit),
+        });
+      }
+    },
   };
-
-  /** @param {'auto'|'day'|'night'} preference */
   const applyTheme = (preference) => {
-    controller.setNightMode(preference === 'night' || (preference === 'auto' && isNight()));
+    const night = preference === 'night' || (preference === 'auto' && isNight());
+    document.documentElement.classList.toggle('night', night);
+    controller?.setNightMode(night);
   };
   applyTheme(readThemePreference());
-  // Re-evaluate on the hour so an "automatic" session that started at 17:40
-  // switches over without a reload.
-  setInterval(() => {
-    if (readThemePreference() === 'auto') applyTheme('auto');
-  }, 10 * 60 * 1000);
-
-  startPositionWatch(controller);
-  createSearch(context);
-
-  const locateButton = document.getElementById('locate');
-  if (locateButton) {
-    locateButton.addEventListener('click', async () => {
-      locateButton.classList.add('is-busy');
-      try {
-        const fix = await requestPosition();
-        controller.setMarker('user', fix.lat, fix.lon, { kind: 'user', title: t('locate.title') });
-        controller.flyTo(fix.lat, fix.lon, { zoom: 16.5 });
-      } catch {
-        toast(t('locate.denied'), { kind: 'error' });
-      } finally {
-        locateButton.classList.remove('is-busy');
-      }
-    });
-  }
-
-  const reportButton = document.getElementById('report-button');
-  if (reportButton) reportButton.addEventListener('click', () => openReport(context));
-
-  const settingsButton = document.getElementById('settings-button');
-  if (settingsButton) settingsButton.addEventListener('click', () => openSettings(controller, applyTheme));
-
-  const shareButton = document.getElementById('share-button');
-  if (shareButton) {
-    shareButton.addEventListener('click', () => {
-      const centre = controller.map.getCenter();
-      openShareSheet({ lat: centre.lat, lon: centre.lng }, context);
-    });
-  }
-
-  // Keep the address bar on a shareable /@lat,lon,zoom at all times — that URL
-  // is the thing people paste into WhatsApp.
-  let deepLinkTimer = 0;
-  controller.map.on('moveend', () => {
-    clearTimeout(deepLinkTimer);
-    deepLinkTimer = window.setTimeout(() => writeDeepLink(controller.map), 700);
-  });
-
-  if (link) {
-    controller.setMarker('shared', link.lat, link.lon, { kind: 'destination', title: t('share.title') });
-  }
-
-  onLanguageChange(() => {
-    document.documentElement.lang = getLanguage();
-    applyStaticStrings();
-    sheet.close();
-  });
+  const search = createSearch(context);
   applyStaticStrings();
-
-  // nav.js, offline.js and the service worker are all optional: the map, search
-  // and place cards must work even if one of them fails to load.
-  import('./nav.js')
-    .then((module) => {
-      context.nav = module;
-    })
-    .catch(() => {
-      /* navigation simply stays unavailable; openDirections reports it */
-    });
-  import('./offline.js')
-    .then(async (offline) => {
-      // Register whatever is already stored, then follow connectivity: losing
-      // signal on the Carretera Sur should change nothing the driver can see.
+  for (const [id, name] of [['locate','locate'], ['settings-button','settings'],
+    ['share-button','share'], ['report-button','report'], ['search-clear','close'], ['search-back','back']]) {
+    document.getElementById(id)?.replaceChildren(icon(name));
+  }
+  performance.mark?.('nicanav-shell-ready');
+  setupUpdates();
+  const viewport = window.visualViewport;
+  const resize = () => {
+    // A keyboard resizes the usable surface; zooming text must stay possible.
+    const height = viewport && viewport.scale === 1 ? viewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', `${height}px`);
+    controller?.map.resize();
+  };
+  viewport?.addEventListener('resize', resize);
+  window.addEventListener('resize', resize);
+  resize();
+  document.getElementById('settings-button')?.addEventListener('click', () => openSettings(controller, applyTheme));
+  document.getElementById('report-button')?.addEventListener('click', () => openReport(context));
+  document.getElementById('share-button')?.addEventListener('click', () => {
+    const centre = controller?.map.getCenter();
+    if (centre) openShareSheet({ lat: centre.lat, lon: centre.lng }, context);
+    else toast(t('map.loading'));
+  });
+  document.getElementById('locate')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const fix = await requestPosition();
+      controller?.setMarker('user', fix.lat, fix.lon, { kind: 'user', title: t('locate.title') });
+      controller?.flyTo(fix.lat, fix.lon, { zoom: 16.5 });
+    } catch { toast(t('locate.denied'), { kind: 'error' }); }
+    finally { button.disabled = false; }
+  });
+  onLanguageChange(() => { document.documentElement.lang = getLanguage(); applyStaticStrings(); sheet.close(); });
+  const link = parseDeepLink(window.location.pathname + window.location.hash);
+  const status = document.getElementById('map-status');
+  let booting = false;
+  async function bootMap() {
+    if (booting) return;
+    booting = true;
+    if (status) { status.hidden = false; status.textContent = t('map.loading'); }
+    const timer = setTimeout(() => {
+      if (status) status.replaceChildren(el('span', { text: t('map.slow') }),
+        el('button', { type: 'button', class: 'btn', text: t('common.retry'), onClick: () => {
+          if (controller) { controller.map.remove(); controller = context.map = null; booting = false; bootMap(); }
+        } }));
+    }, 8000);
+    try {
+      controller = await createMap({ container,
+        center: link ? [link.lon, link.lat] : undefined, zoom: link?.zoom,
+        night: document.documentElement.classList.contains('night'),
+        onReady: () => { clearTimeout(timer); if (status) status.hidden = true; performance.mark?.('nicanav-map-ready'); },
+        onPoiClick: (hit) => hit.id ? openPlaceCard(hit.id, context) : openPointCard(hit, context),
+        onMapClick: () => { if (context.pickPoint) return; if (sheet.isOpen()) sheet.close(); search?.show(false); },
+        onLongPress: (point) => openPointCard(point, context),
+      });
+      context.map = controller;
+      if (context.selected) {
+        controller.setMarker('selected', context.selected.lat, context.selected.lon, { title: context.selected.name });
+        controller.flyTo(context.selected.lat, context.selected.lon);
+      }
+      if (link) controller.setMarker('shared', link.lat, link.lon, { title: t('share.title') });
+      let linkTimer;
+      controller.map.on('moveend', () => { clearTimeout(linkTimer); linkTimer = setTimeout(() => writeDeepLink(controller.map), 700); });
+      const offline = await import('./offline.js');
       await offline.activateOffline();
       offline.autoSwitchOnConnectivity(controller.map);
-    })
-    .catch(() => {
-      /* offline tile management is a bonus, never a prerequisite */
-    });
-
+    } catch {
+      clearTimeout(timer);
+      if (status) status.replaceChildren(el('span', { text: t('map.failedTitle') }), el('button', {
+        type: 'button', class: 'btn', text: t('common.retry'), onClick: bootMap,
+      }));
+    } finally { booting = false; }
+  }
+  bootMap();
 }
 
 /** Re-label the parts of the shell that live in index.html, after a language switch. */

@@ -1,7 +1,8 @@
 # nicanav runbook
 
 Operating the stack on one box. Written for the person who is on call, which for
-a while is the person who wrote it.
+a while is the person who wrote it. [docs/SERVER.md](SERVER.md) is the companion:
+what runs where, which ports, which paths, and how to redeploy or roll back.
 
 The governing rule everywhere below: **stale beats wrong.** A day-old map is a
 minor annoyance; a half-built one sends drivers into a wall. Every job publishes
@@ -233,6 +234,12 @@ A handful of routes moving together after an OSM update is usually one real
 change. Everything moving at once is usually a costing or speed-table change.
 One route failing on `must_pass_near` is usually a data problem at that spot.
 
+Every route in the file is currently `source: agent` — the expectations were
+reasoned out, not measured — so a mismatch prints as `diff` and does **not**
+fail the run. Only `driven` routes can. Drive one, replace its numbers with
+what the GPX says, set `source: "driven"`, and it starts asserting. Until then
+`--strict` is how you see the whole suite red on purpose.
+
 **KPIs.** `pipeline/qa/kpis.py` is meant to be unflattering. The share of
 primary/secondary/tertiary carrying `oneway`, `surface` and `maxspeed` is a
 to-do list for the field programme, not a dashboard.
@@ -242,7 +249,25 @@ from MGA. Each is either genuinely unreachable or — far more often — a road
 drawn a metre short of the one it meets. The output includes an OSM link per
 road.
 
-## 9. When search looks wrong
+## 9. Driving the route without a car
+
+Turn-by-turn cannot be checked from a desk. Append to any map URL:
+
+- `?sim=1` — drive the active route at 40 km/h; `&speed=80` for anything else.
+  Fixes arrive at 1 Hz with ±5 m of position noise and one 15 s signal
+  dropout, because a track that is exactly on the centreline and never drops
+  will let you tune an off-route detector that fails on the first real drive.
+- `?sim=1&detour=1` — leave the route a third of the way in, so the off-route
+  detector and one reroute actually fire.
+- `?gpx=<url>` — replay a recorded track at its own timestamps, red lights
+  included. This is the honest test: a synthetic drive sits exactly on the
+  centreline and a real receiver never does.
+
+The simulator replaces the position source and nothing else, so prompts,
+snapping, rerouting and arrival all run unmodified. `web/js/simulator.js`,
+covered by `tests/js/simulator.test.mjs`.
+
+## 10. When search looks wrong
 
 ```bash
 curl -s localhost:7700/health
@@ -258,7 +283,7 @@ An empty search with a healthy index usually means the *export* is empty, which
 usually means PostGIS is empty, which usually means `load_pois` failed. Follow
 that chain rather than reindexing hopefully.
 
-## 10. Monthly Overture refresh
+## 11. Monthly Overture refresh
 
 Only the two most recent releases stay on S3, so a pinned release 404s within
 about two months. `pipeline/pois/fetch_overture.py` discovers the newest release
@@ -268,7 +293,7 @@ and `taxonomy`.
 
 Re-run by hand with `./pipeline/monthly_overture.sh [release]`.
 
-## 11. Privacy
+## 12. Privacy
 
 Search and route logs store positions rounded to ~1 km, and the client
 identifier is a salted hash of the forwarded address. That is enough to find

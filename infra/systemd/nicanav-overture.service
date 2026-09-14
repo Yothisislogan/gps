@@ -1,0 +1,20 @@
+# Monthly Overture Places refresh. A new release lands mid-month; this
+# re-conflates only what changed, joined on the GERS ids already stored.
+[Unit]
+Description=nicanav monthly Overture refresh
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=nicanav-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nicanav
+ExecStart=/opt/nicanav/pipeline/monthly_overture.sh
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=idle
+MemoryAccounting=yes
+User=root
+NoNewPrivileges=yes
+SyslogIdentifier=nicanav-overture

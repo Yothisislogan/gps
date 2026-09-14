@@ -62,7 +62,7 @@ lives. `api` imports nothing else from `pipeline`.
 | `NICANAV_DATABASE_URL` | `postgresql://nicanav:nicanav@postgis:5432/nicanav` | api, pipeline |
 | `NICANAV_DATA_DIR` | `<repo>/data` | pipeline |
 | `NICANAV_TILES_DIR` | `<repo>/data/tiles` | pipeline, nginx mount |
-| `NICANAV_PUBLIC_BASE_URL` | `http://localhost:8080` | api (share links) |
+| `NICANAV_PUBLIC_BASE_URL` | `http://localhost:8400` | api (share links) |
 | `NICANAV_TILES_BASE_URL` | `/tiles` | web style URLs |
 | `NICANAV_CORS_ORIGINS` | `*` | api |
 | `NICANAV_ADMIN_USER` / `NICANAV_ADMIN_PASSWORD` | `admin` / *(empty)* | api `/admin` |

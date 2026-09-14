@@ -1,0 +1,12 @@
+[Unit]
+Description=nicanav expire closures and reports (hourly)
+
+[Timer]
+Unit=nicanav-expire.service
+OnCalendar=hourly
+# Not on the hour with everything else on the box.
+RandomizedDelaySec=5min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

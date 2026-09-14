@@ -1,0 +1,18 @@
+# pg_dump of the moderation database (reports, aliases, closures, POI edits).
+# Everything else on this box is rebuildable from OSM and Overture; this is not.
+[Unit]
+Description=nicanav database backup
+Requires=docker.service
+After=docker.service
+OnFailure=nicanav-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nicanav
+ExecStart=/opt/nicanav/scripts/backup_db.sh
+TimeoutStartSec=30min
+Nice=10
+IOSchedulingClass=idle
+User=root
+NoNewPrivileges=yes
+SyslogIdentifier=nicanav-backup

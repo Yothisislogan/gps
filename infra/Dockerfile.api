@@ -32,4 +32,4 @@ EXPOSE 8000
 # One worker per vCPU is wrong here: this box also runs Valhalla, PostGIS and
 # Meilisearch. Two workers handle the app's traffic with room to spare, and the
 # workload is I/O-bound anyway.
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--no-access-log", "--proxy-headers", "--forwarded-allow-ips", "*"]

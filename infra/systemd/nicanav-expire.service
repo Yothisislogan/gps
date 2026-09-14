@@ -1,0 +1,19 @@
+# Expire finished closures and stale reports, so the router stops avoiding a
+# cauce that drained three weeks ago.
+[Unit]
+Description=nicanav expire closures and reports
+Requires=docker.service
+After=docker.service
+OnFailure=nicanav-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nicanav
+ExecStart=/usr/bin/docker compose -f /opt/nicanav/infra/docker-compose.yml \
+    --env-file /opt/nicanav/infra/.env exec -T postgis \
+    psql -v ON_ERROR_STOP=1 -U nicanav -d nicanav -c \
+    "UPDATE closure SET active = false WHERE active AND ends_at IS NOT NULL AND ends_at < now(); UPDATE report SET status = 'expired' WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < now();"
+TimeoutStartSec=5min
+User=root
+NoNewPrivileges=yes
+SyslogIdentifier=nicanav-expire

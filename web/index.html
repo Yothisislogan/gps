@@ -7,10 +7,9 @@
 
   viewport-fit=cover matters here: this is used on a dash mount, on phones with
   notches, in landscape. The safe-area insets in app.css do the rest.
-  user-scalable=no is deliberate: a pinch meant for the map must never zoom the
-  chrome while somebody is driving.
+  Map gestures are scoped to the canvas; browser text zoom remains available.
 -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f3ee" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141821" media="(prefers-color-scheme: dark)">
 <meta name="description" content="Mapa, búsqueda y navegación paso a paso para Nicaragua. Direcciones como las decimos aquí: de la rotonda, 2c al sur.">
@@ -40,6 +39,7 @@
   <div id="map" class="map" role="application" aria-label="Mapa de Nicaragua"></div>
   <!-- Shown instead of the map when WebGL2 is unavailable (old low-end Android):
        a legible explanation beats a white screen. -->
+  <div id="map-status" class="map-status" role="status">Cargando el mapa…</div>
   <div id="map-fallback" class="fatal" hidden></div>
 
   <noscript>
@@ -64,7 +64,7 @@
         autocapitalize="off"
         autocorrect="off"
         spellcheck="false"
-        placeholder="Buscar lugar o dirección"
+        placeholder="¿Adónde vamos?"
         aria-label="Buscar lugar o dirección"
         aria-controls="search-results"
         aria-autocomplete="list">

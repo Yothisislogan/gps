@@ -106,7 +106,7 @@ build_pois() {
     --maximum-zoom=14 \
     --drop-densest-as-needed \
     --extend-zooms-if-still-dropping \
-    --no-tile-size-limit \
+    --maximum-tile-bytes="${NICANAV_POI_TILE_BYTES:-131072}" \
     "$POI_GEOJSON" \
     || die "tippecanoe failed"
 

@@ -47,3 +47,9 @@ node_modules/
 web/vendor/
 web/sprites/nicanav@2x.json
 web/sprites/nicanav@2x.png
+
+# Content-addressed deployment output
+dist/
+
+test-results/
+playwright-report/

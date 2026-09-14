@@ -14,6 +14,7 @@
  */
 
 import * as api from './api.js';
+import { saveFavorite } from './favorites.js';
 import { CONFIG, categoryLabel } from './config.js';
 import {
   actionRow,
@@ -133,12 +134,15 @@ export function renderCard(card, handlers) {
     { label: t('poi.directions'), icon: 'directions', primary: true, onClick: () => handlers.onDirections(card) },
     card.phone ? { label: t('poi.call'), icon: 'phone', href: `tel:${card.phone}` } : null,
     whatsapp ? { label: t('poi.whatsapp'), icon: 'whatsapp', href: whatsapp } : null,
+  ]);
+  const more = el('details', { class: 'card__more' }, [el('summary', { text: t('poi.more') }), actionRow([
     card.facebook ? { label: t('poi.facebook'), icon: 'facebook', href: card.facebook } : null,
     card.instagram ? { label: t('poi.instagram'), icon: 'instagram', href: card.instagram } : null,
     card.website ? { label: t('poi.website'), icon: 'globe', href: card.website } : null,
     { label: t('poi.share'), icon: 'share', onClick: () => handlers.onShare(card) },
     { label: t('poi.report'), icon: 'report', onClick: () => handlers.onReport(card) },
-  ]);
+    ...favoriteActions(card),
+  ])]);
 
   const photo = (card.photos || [])[0];
 
@@ -169,7 +173,8 @@ export function renderCard(card, handlers) {
     Array.isArray(card.alt_names) && card.alt_names.length
       ? el('div', { class: 'card__note', text: `${t('poi.altNames')}: ${card.alt_names.join(', ')}` })
       : null,
-    actions,
+    el('p', { class: 'card__note', text: t('poi.entrance') }),
+    actions, more,
   ]);
 }
 
@@ -178,16 +183,22 @@ export function renderCard(card, handlers) {
  * @param {string} poiId
  * @param {any} context the shared app context from map.js
  */
+let cardRequest = null;
 export async function openPlaceCard(poiId, context) {
-  sheet.open(el('div', { class: 'card' }, [spinner()]), { title: '' });
+  cardRequest?.abort();
+  const request = cardRequest = new AbortController();
+  sheet.open(el('div', { class: 'card' }, [spinner()]), { title: '', onClose: () => request.abort() });
   try {
-    const card = await api.poi(poiId);
+    const card = await api.poi(poiId, { signal: request.signal });
+    if (request.signal.aborted) return null;
+    context.selected = card;
     sheet.open(renderCard(card, handlersFor(context, card)), { title: card.name });
     if (context && context.map) {
       context.map.setMarker('selected', card.lat, card.lon, { kind: 'selected', title: card.name });
     }
     return card;
   } catch (error) {
+    if (request.signal.aborted) return null;
     const message = error && error.code === 'poi_not_found' ? t('poi.notFound') : t('search.failed');
     sheet.open(el('div', { class: 'card' }, [errorBlock(message)]), { title: '' });
     return null;
@@ -208,6 +219,10 @@ export async function openPlaceCard(poiId, context) {
  * @param {any} context
  */
 export function openPointCard(place, context) {
+  cardRequest?.abort();
+  context.selected = place;
+  context.map?.setMarker('selected', place.lat, place.lon, { title: place.name });
+  context.map?.flyTo(place.lat, place.lon);
   const handlers = handlersFor(context, place);
   const rows = [
     el('div', {
@@ -234,31 +249,18 @@ export function openPointCard(place, context) {
       addressNode.replaceChildren(el('code', { text: t('share.addressFailed') }));
     });
 
-  if (place.candidate && place.query && place.candidate.confidence < CONFIRM_BELOW) {
-    rows.push(
-      el('div', { class: 'card__note', text: `${t('common.confidence')}: ${Math.round(place.candidate.confidence * 100)}%` }),
-      actionRow([
-        {
-          label: t('common.here'),
-          icon: 'check',
-          onClick: async () => {
-            try {
-              await api.saveAlias({ text: place.query, lat: place.lat, lon: place.lon });
-              toast(t('report.thanks'));
-            } catch {
-              toast(t('report.failed'), { kind: 'error' });
-            }
-          },
-        },
-      ]),
-    );
-  }
+  if (place.candidate) rows.push(el('p', { class: 'card__note', text: t('poi.approximate') }));
+  if (place.confirmed && place.query) rows.push(actionRow([{ label: t('poi.sendCorrection'), icon: 'check', onClick: async () => {
+    try { await api.saveAlias({ text: place.query, lat: place.lat, lon: place.lon }); toast(t('report.thanks')); }
+    catch { toast(t('report.failed'), { kind: 'error' }); }
+  } }]));
 
   rows.push(
     actionRow([
       { label: t('poi.directions'), icon: 'directions', primary: true, onClick: () => handlers.onDirections(place) },
       { label: t('poi.share'), icon: 'share', onClick: () => handlers.onShare(place) },
       { label: t('poi.report'), icon: 'report', onClick: () => handlers.onReport(place) },
+      ...favoriteActions(place),
       place.id ? { label: t('common.open'), icon: 'chevron', onClick: () => openPlaceCard(place.id, context) } : null,
     ]),
   );
@@ -274,13 +276,59 @@ const CONFIRM_BELOW = 0.85;
 /** The card's buttons, bound to the shared context. */
 function handlersFor(context, place) {
   return {
-    onDirections: (target) => openDirections(target || place, context),
+    onDirections: (target) => confirmDestination(target || place, context),
     onReport: (target) => openReport(context, target || place),
     onShare: (target) => {
       const point = target || place;
       if (context && context.openShare) context.openShare({ lat: point.lat, lon: point.lon, name: point.name });
     },
   };
+}
+
+function favoriteActions(place) {
+  return ['home', 'work'].map(kind => ({ label: t(kind === 'home' ? 'search.saveHome' : 'search.saveWork'), icon: 'pin', onClick: () => {
+    if (saveFavorite(kind, place)) toast(t('poi.saved'));
+  } }));
+}
+
+export function choosePoint(context, place, onConfirm) {
+  if (!context.map) { toast(t('map.loading')); return; }
+  const map = context.map.map;
+  if (place && Number.isFinite(place.lat)) context.map.flyTo(place.lat, place.lon, { duration: 0 });
+  context.pickPoint = true;
+  const update = () => {
+    const centre = map.getCenter();
+    context.map.setMarker('confirm', centre.lat, centre.lng, { kind: 'selected', title: t('poi.confirm') });
+  };
+  const cleanup = () => { map.off('move', update); context.map.setMarker('confirm', null, null); context.pickPoint = false; };
+  map.on('move', update);
+  update();
+  sheet.open(el('div', { class: 'card' }, [
+    el('p', { text: t('poi.adjustHint') }),
+    actionRow([{ label: t('poi.confirm'), icon: 'check', primary: true, onClick: () => {
+      const centre = map.getCenter();
+      const selected = { ...place, lat: centre.lat, lon: centre.lng, confirmed: true };
+      sheet.close();
+      onConfirm(selected);
+    } }]),
+  ]), { title: t('poi.adjust'), onClose: cleanup });
+}
+
+export function confirmDestination(place, context) {
+  if (place.confirmed) return openDirections(place, context);
+  context.selected = place;
+  context.map?.setMarker('selected', place.lat, place.lon, { title: place.name });
+  const confirm = selected => {
+    context.selected = selected;
+    openDirections(selected, context);
+  };
+  sheet.open(el('div', { class: 'card' }, [
+    el('p', { text: place.candidate ? t('poi.approximate') : t('poi.entrance') }),
+    actionRow([
+      { label: t('poi.confirm'), icon: 'check', primary: true, onClick: () => confirm({ ...place, confirmed: true }) },
+      { label: t('poi.adjust'), icon: 'pin', onClick: () => choosePoint(context, place, confirm) },
+    ]),
+  ]), { title: place.name || t('poi.confirm') });
 }
 
 // --------------------------------------------------------------------------- //
@@ -338,7 +386,7 @@ export function renderRoute(response, handlers) {
         onClick: () => handlers.onPickAlternate && handlers.onPickAlternate(index),
       },
       [
-        el('span', { text: t('dir.route', { n: index + 1 }) }),
+        el('span', { text: alternateSummary.time === Math.min(...routes.map(r => r.trip?.summary?.time ?? Infinity)) ? t('dir.fastest') : (alternateSummary.length === Math.min(...routes.map(r => r.trip?.summary?.length ?? Infinity)) ? t('dir.shortest') : t('dir.other')) }),
         el('span', {
           text: `${formatDistance((alternateSummary.length || 0) * 1000)} · ${formatDuration(alternateSummary.time || 0)}`,
         }),
@@ -384,7 +432,9 @@ let directionsRequest = null;
 export async function openDirections(destination, context) {
   directionsRequest?.abort();
   const controller = directionsRequest = new AbortController();
-  let fix = context.getPosition ? context.getPosition() : null;
+  const sheetOptions = { title: t('dir.title'), onClose: () => controller.abort() };
+  sheet.open(el('div', { class: 'card' }, [spinner(t('dir.calculating'))]), sheetOptions);
+  let fix = context.origin || (context.getPosition ? context.getPosition() : null);
   if (!fix && context.requestPosition) {
     try {
       fix = await context.requestPosition();
@@ -392,13 +442,19 @@ export async function openDirections(destination, context) {
       fix = null;
     }
   }
+  if (controller.signal.aborted) return null;
   if (!fix) {
-    toast(t('dir.noPosition'), { kind: 'error' });
+    sheet.open(el('div', { class: 'card' }, [
+      el('p', { text: t('dir.noPositionHint') }),
+      actionRow([{ label: t('dir.manual'), icon: 'pin', primary: true, onClick: () =>
+        choosePoint(context, destination, origin => openDirections(destination, { ...context, origin })) }]),
+      errorBlock(t('dir.noPosition'), () => openDirections(destination, context)),
+    ]), sheetOptions);
     return null;
   }
   if (controller.signal.aborted) return null;
 
-  const sheetOptions = { title: t('dir.title'), onClose: () => controller.abort() };
+
   sheet.open(el('div', { class: 'card' }, [spinner(t('dir.calculating'))]), sheetOptions);
   try {
     const routeOptions = {
@@ -435,7 +491,7 @@ export async function openDirections(destination, context) {
   } catch (error) {
     if (controller.signal.aborted) return null;
     const message = (error && error.message) || t('dir.failed');
-    sheet.open(el('div', { class: 'card' }, [errorBlock(message)]), { title: t('dir.title') });
+    sheet.open(el('div', { class: 'card' }, [errorBlock(message, () => openDirections(destination, context))]), { title: t('dir.title') });
     return null;
   }
 }
@@ -464,6 +520,7 @@ function readAvoidUnpaved() {
  * checking whether a fritanga is open should not pay for it.
  */
 async function beginNavigation(response, destination, context, routeOptions) {
+  if (!context.map) { toast(t('map.loading')); return; }
   try {
     const nav = await import('./nav.js');
     sheet.close();

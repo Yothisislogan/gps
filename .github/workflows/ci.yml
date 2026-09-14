@@ -129,3 +129,25 @@ jobs:
         env:
           NICANAV_TEST_DSN: postgresql://nicanav:test-only-password@localhost:5432/nicanav_test
         run: pytest -q -m docker tests/test_moderation_postgis.py
+
+  browser:
+    name: mobile journeys (Chromium and WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: npm ci --ignore-scripts && npm run build
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-browser-results
+          path: test-results/
+          retention-days: 14

@@ -58,6 +58,7 @@ test('offline deep links open the shell, but a missing module never receives HTM
 test('a stalled request without a cached copy still has a deadline', async () => {
   const sw = worker(() => new Promise(() => {}));
   const request = sw.get('/js/nav.js');
+  await new Promise(resolve => setImmediate(resolve));
   sw.timers[0]();
   assert.equal((await request.response).status, 503);
 });
@@ -92,4 +93,16 @@ test('a fresh worker can serve renderer, worker, fonts and hours parser without 
     sw.cache(path, 'installed asset', 'application/octet-stream');
     assert.equal(await (await sw.get(path).response).text(), 'installed asset', path);
   }
+});
+
+
+test('installed shell returns immediately without contacting a stalled network', async () => {
+  let requests = 0;
+  const sw = worker(() => { requests++; return new Promise(() => {}); });
+  sw.cache('/index.html', 'installed app');
+  sw.cache('/js/map.js', 'installed module');
+  assert.equal(await (await sw.get('/', { mode: 'navigate' }).response).text(), 'installed app');
+  assert.equal(await (await sw.get('/js/map.js').response).text(), 'installed module');
+  assert.equal(requests, 0);
+  assert.equal(sw.timers.length, 0);
 });

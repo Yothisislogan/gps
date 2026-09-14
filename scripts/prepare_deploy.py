@@ -47,6 +47,10 @@ def write_admin_auth(user: str, password: str, destination: Path) -> None:
 def main() -> int:
     settings = get_settings()
     try:
+        if not settings.pg_password or not settings.meili_key:
+            raise ValueError("database password and search key must be explicitly configured")
+        if not settings.cors_origin_list or "*" in settings.cors_origin_list:
+            raise ValueError("NICANAV_CORS_ORIGINS must list the app origin explicitly")
         write_admin_auth(
             settings.admin_user,
             settings.admin_password,

@@ -3,98 +3,82 @@
 # the sprite sheet and the Meilisearch synonyms at the same time.
 # Loader and matching rules: pipeline/pois/taxonomy.py.  Lines starting with # are comments.
 #
-# UNVERIFIED - OVERTURE COLUMN IS PROVISIONAL: the strings below were written from the published shape of
-# the Overture Places taxonomy (dotted, snake_case, most-general segment first).  The real
-# category list ships as a CSV with each Overture release and is not reachable from this build
-# environment, so pipeline/pois/fetch_overture.py must validate every string here against that
-# file on the first ingest and fail loudly on the ones that do not exist.
-#
-# UNVERIFIED - a few selectors are plausible but unconfirmed against live taginfo counts for
-# Nicaragua: water=lagoon, cuisine=nicaraguan, shop=money_transfer, landuse=port.  Check them
-# with osmium tags-filter on the first nightly extract.
-#
-# SHARED OSM TAGS: several Nicaraguan categories have no distinct OSM tag and legitimately
-# share one.  amenity=restaurant is claimed by restaurante/comedor/buffet, amenity=cafe by
-# cafe/cafetin, amenity=fast_food by comida_rapida/fritanga and shop=car_repair by
-# taller_mecanico/vulcanizacion.  A shared selector is resolved by row order (see below), so
-# rows inside a group are ordered generic-first: a bare amenity=restaurant is a restaurante
-# until a later subcategory pass, driven by the name and by cuisine=*, calls it a comedor.
-# The refining tags (cuisine=nicaraguan for fritanga, cuisine=pizza for pizzeria,
-# shop=tyres for vulcanizacion, tourism=love_hotel for hotel_paso) outrank the shared one.
-#
-# ROW ORDER IS LOAD-BEARING: it is the final tie-break in category_for_osm() and in the
-# Overture lookup.  Do not sort this file.
-#
-# NOT POIs, on purpose: highway=milestone (km posts feed pipeline/geocode/kmpost.py, not the
-# POI layer), highway=turning_circle, barrier=*, addr:* nodes, and anything prefixed
-# disused:/was:/abandoned:/demolished:/proposed: (a dead business is not a POI of its old
-# category — the ingest job routes those to the gazetteer as former=true landmarks).
+# overture_categories: BARE LEAF TOKENS, as they appear in the data.  Overture's schema
+# forbids dots in a category (^[a-z0-9]+(_[a-z0-9]+)*$); the dotted paths this column used to
+# hold were the taxonomy's hierarchy rendering and matched nothing, sending 70% of Nicaraguan
+# places to `otro`.  This column was rebuilt on 2026-09-07 from the real 2026-08-19.0 release:
+# 43,030 Nicaraguan places, 40,654 categorised, 730 distinct categories.  321 of the 323 tokens
+# below were observed in that extract; the other two (dry_cleaning, lake) are plausible but
+# unseen in Nicaragua.  Coverage is 80.4% of categorised places; the remainder are professional
+# and B2B services (lawyers, ad agencies, real estate) and Overture's generic group names,
+# which have no map category a driver would navigate by.  Re-audit with:
+#     python3 -m pipeline.pois.audit_overture --release <release>
 category_id,group,label_es,label_en,icon,osm_selectors,overture_categories,min_zoom
-restaurante,comida,Restaurante,Restaurant,restaurante,amenity=restaurant,eat_and_drink.restaurant,15
-comida_rapida,comida,Comida rápida,Fast food,comida-rapida,amenity=fast_food;cuisine=burger;cuisine=chicken,eat_and_drink.fast_food;eat_and_drink.restaurant.burger_restaurant,15
-cafe,comida,Café,Coffee shop,cafe,amenity=cafe;shop=coffee,eat_and_drink.cafe;eat_and_drink.cafe.coffee_shop,15
-bar,comida,Bar,Bar,bar,amenity=bar;amenity=pub,eat_and_drink.bar;eat_and_drink.bar.pub,15
-comedor,comida,Comedor,Home-style eatery,comedor,amenity=restaurant,eat_and_drink.restaurant.cafeteria,16
-buffet,comida,Buffet,Buffet,buffet,amenity=restaurant;cuisine=buffet,eat_and_drink.restaurant.buffet,16
-fritanga,comida,Fritanga,Street grill,fritanga,amenity=fast_food;cuisine=nicaraguan,eat_and_drink.restaurant.latin_american_restaurant.nicaraguan_restaurant;eat_and_drink.street_vendor,16
-cafetin,comida,Cafetín,Snack bar,cafetin,amenity=cafe,eat_and_drink.cafe.snack_bar,16
-pizzeria,comida,Pizzería,Pizzeria,pizzeria,cuisine=pizza,eat_and_drink.restaurant.pizza_restaurant,15
-heladeria,comida,Heladería,Ice cream shop,heladeria,amenity=ice_cream;shop=ice_cream,eat_and_drink.dessert.ice_cream_shop,16
-panaderia,comida,Panadería,Bakery,panaderia,shop=bakery,eat_and_drink.bakery,16
-reposteria,comida,Repostería,Pastry shop,reposteria,shop=pastry;shop=confectionery,eat_and_drink.dessert.pastry_shop,16
-discoteca,comida,Discoteca,Nightclub,discoteca,amenity=nightclub,arts_and_entertainment.nightlife.night_club,15
-pulperia,compras,Pulpería,Corner store,pulperia,shop=convenience;shop=kiosk,retail.convenience_store,16
-supermercado,compras,Supermercado,Supermarket,supermercado,shop=supermarket,retail.food_and_beverage_retail.grocery_store.supermarket,14
-mercado,compras,Mercado,Public market,mercado,amenity=marketplace,retail.farmers_market,13
-tienda,compras,Tienda,General store,tienda,shop=general;shop=variety_store;shop=department_store;shop=clothes,retail.shopping.general_store,16
-ferreteria,compras,Ferretería,Hardware store,ferreteria,shop=hardware;shop=doityourself;shop=paint,retail.home_improvement.hardware_store,15
-distribuidora,compras,Distribuidora,Wholesale distributor,distribuidora,shop=wholesale;shop=trade,retail.wholesale_store,15
-centro_comercial,compras,Centro comercial,Shopping mall,centro-comercial,shop=mall,retail.shopping_center.shopping_mall,12
-libreria,compras,Librería,Bookshop and stationery,libreria,shop=books;shop=stationery,retail.books_and_stationery.book_store,16
-gasolinera,auto,Gasolinera,Petrol station,gasolinera,amenity=fuel,automotive.gas_station,13
-taller_mecanico,auto,Taller mecánico,Car repair shop,taller-mecanico,shop=car_repair;craft=car_repair,automotive.auto_repair,15
-vulcanizacion,auto,Vulcanización,Tyre repair,vulcanizacion,shop=tyres;shop=car_repair,automotive.tire_shop,15
-lavado_autos,auto,Lavado de autos,Car wash,lavado-autos,amenity=car_wash,automotive.car_wash,15
-repuestos,auto,Repuestos,Auto parts,repuestos,shop=car_parts;shop=motorcycle_parts,automotive.auto_parts,15
-parqueo,auto,Parqueo,Parking,parqueo,amenity=parking,automotive.parking,15
-banco,dinero,Banco,Bank,banco,amenity=bank,financial_service.bank,14
-cajero,dinero,Cajero automático,ATM,cajero,amenity=atm,financial_service.atm,15
-casa_de_cambio,dinero,Casa de cambio,Currency exchange,casa-de-cambio,amenity=bureau_de_change,financial_service.currency_exchange,15
-remesas,dinero,Remesas,Money transfer,remesas,shop=money_transfer;shop=money_lender,financial_service.money_transfer,15
-hospital,salud,Hospital,Hospital,hospital,amenity=hospital,health_and_medical.hospital,12
-clinica,salud,Clínica,Clinic,clinica,amenity=clinic;amenity=doctors;healthcare=centre,health_and_medical.medical_clinic,15
-farmacia,salud,Farmacia,Pharmacy,farmacia,amenity=pharmacy;healthcare=pharmacy,health_and_medical.pharmacy,14
-dentista,salud,Dentista,Dentist,dentista,amenity=dentist;healthcare=dentist,health_and_medical.dentist,15
-veterinaria,salud,Veterinaria,Veterinary clinic,veterinaria,amenity=veterinary;healthcare=veterinary,pets.veterinarian,15
-hotel,turismo,Hotel,Hotel,hotel,tourism=hotel;tourism=guest_house,accommodation.hotel,13
-hostal,turismo,Hostal,Hostel,hostal,tourism=hostel,accommodation.hostel,14
-playa,turismo,Playa,Beach,playa,natural=beach,attractions_and_activities.beach,11
-mirador,turismo,Mirador,Viewpoint,mirador,tourism=viewpoint,attractions_and_activities.scenic_lookout,12
-volcan,turismo,Volcán,Volcano,volcan,natural=volcano,attractions_and_activities.volcano,9
-laguna,turismo,Laguna,Crater lagoon,laguna,natural=water;water=lagoon,attractions_and_activities.lake,10
-museo,turismo,Museo,Museum,museo,tourism=museum,arts_and_entertainment.museum,13
-iglesia,turismo,Iglesia,Church,iglesia,amenity=place_of_worship;building=church,religious_organization.church_cathedral,14
-parque,turismo,Parque,Park,parque,leisure=park;leisure=playground,attractions_and_activities.park,13
-sitio_turistico,turismo,Sitio turístico,Tourist attraction,sitio-turistico,tourism=attraction;tourism=theme_park;tourism=zoo,attractions_and_activities.tourist_attraction,12
-policia,servicios,Policía,Police station,policia,amenity=police,public_service_and_government.police_station,13
-bomberos,servicios,Bomberos,Fire station,bomberos,amenity=fire_station,public_service_and_government.fire_station,13
-correo,servicios,Correo,Post office,correo,amenity=post_office,business_to_business.shipping_and_mailing.post_office,15
-embajada,servicios,Embajada,Embassy,embajada,amenity=embassy;office=diplomatic,public_service_and_government.embassy,13
-universidad,servicios,Universidad,University,universidad,amenity=university;amenity=college,education.university,12
-escuela,servicios,Escuela,School,escuela,amenity=school;amenity=kindergarten,education.school,14
-gimnasio,servicios,Gimnasio,Gym,gimnasio,leisure=fitness_centre;leisure=sports_centre,active_life.fitness_center.gym,15
-salon_belleza,servicios,Salón de belleza,Beauty salon,salon-belleza,shop=hairdresser;shop=beauty,beauty_and_spa.hair_salon,16
-lavanderia,servicios,Lavandería,Laundry,lavanderia,shop=laundry;shop=dry_cleaning,laundry_services.laundromat,16
-hotel_paso,servicios,Hotel de paso,Short-stay motel,hotel-paso,tourism=love_hotel;tourism=motel,accommodation.motel,15
-terminal_buses,transporte,Terminal de buses,Bus terminal,terminal-buses,amenity=bus_station;public_transport=station,transportation.bus_station,12
-parada_bus,transporte,Parada de bus,Bus stop,parada-bus,highway=bus_stop;public_transport=platform,transportation.bus_stop,16
-aeropuerto,transporte,Aeropuerto,Airport,aeropuerto,aeroway=aerodrome;aeroway=terminal,transportation.airport,10
-puerto,transporte,Puerto,Port,puerto,amenity=ferry_terminal;landuse=port,transportation.ferry_terminal,12
-taxi,transporte,Taxi,Taxi stand,taxi,amenity=taxi,transportation.taxi_service,15
+restaurante,comida,Restaurante,Restaurant,restaurante,amenity=restaurant,restaurant;bar_and_grill_restaurant;seafood_restaurant;barbecue_restaurant;chicken_restaurant;mexican_restaurant;chinese_restaurant;steakhouse;latin_american_restaurant;italian_restaurant;american_restaurant;asian_restaurant;cuban_restaurant;caribbean_restaurant;spanish_restaurant;salvadoran_restaurant;sushi_restaurant;peruvian_restaurant;japanese_restaurant;korean_restaurant;indian_restaurant;vegetarian_restaurant;health_food_restaurant;comfort_food_restaurant;theme_restaurant;soup_restaurant;diner;gastropub;breakfast_and_brunch_restaurant;food;eat_and_drink,15
+comida_rapida,comida,Comida rápida,Fast food,comida-rapida,amenity=fast_food;cuisine=burger;cuisine=chicken,fast_food_restaurant;sandwich_shop;food_truck;taco_restaurant;food_delivery_service,15
+cafe,comida,Café,Coffee shop,cafe,amenity=cafe;shop=coffee,coffee_shop;cafe;smoothie_juice_bar,15
+bar,comida,Bar,Bar,bar,amenity=bar;amenity=pub,bar;sports_bar;beer_bar;cocktail_bar;wine_bar;tapas_bar;lounge;brewery;winery;beer_garden;pool_billiards,15
+comedor,comida,Comedor,Home-style eatery,comedor,amenity=restaurant,,16
+buffet,comida,Buffet,Buffet,buffet,amenity=restaurant;cuisine=buffet,buffet_restaurant,16
+fritanga,comida,Fritanga,Street grill,fritanga,amenity=fast_food;cuisine=nicaraguan,,16
+cafetin,comida,Cafetín,Snack bar,cafetin,amenity=cafe,internet_cafe,16
+pizzeria,comida,Pizzería,Pizzeria,pizzeria,cuisine=pizza,pizza_restaurant,15
+heladeria,comida,Heladería,Ice cream shop,heladeria,amenity=ice_cream;shop=ice_cream,ice_cream_shop;frozen_yoghurt_shop,16
+panaderia,comida,Panadería,Bakery,panaderia,shop=bakery,bakery,16
+reposteria,comida,Repostería,Pastry shop,reposteria,shop=pastry;shop=confectionery,desserts;cupcake_shop;chocolatier;candy_store,16
+discoteca,comida,Discoteca,Nightclub,discoteca,amenity=nightclub,dance_club;karaoke;music_venue,15
+pulperia,compras,Pulpería,Corner store,pulperia,shop=convenience;shop=kiosk,convenience_store,16
+supermercado,compras,Supermercado,Supermarket,supermercado,shop=supermarket,grocery_store;superstore;department_store;organic_grocery_store;wholesale_grocer,14
+mercado,compras,Mercado,Public market,mercado,amenity=marketplace,farmers_market;flea_market,13
+tienda,compras,Tienda,General store,tienda,shop=general;shop=variety_store;shop=department_store;shop=clothes,shopping;clothing_store;womens_clothing_store;mens_clothing_store;childrens_clothing_store;shoe_store;fashion_accessories_store;boutique;sports_wear;lingerie_store;uniform_store;fashion;clothing_company;swimwear_store;bridal_shop;costume_store;surf_shop;jewelry_store;toy_store;pet_store;gift_shop;souvenir_shop;thrift_store;pawn_shop;luggage_store;tobacco_shop;liquor_store;party_supply;arts_and_crafts;fabric_store;musical_instrument_store;video_game_store;sporting_goods;bicycle_shop;motorsports_store;hunting_and_fishing_supplies;discount_store;outlet_store;pop_up_shop;butcher_shop;fruits_and_vegetables;fishmonger;cheese_shop;delicatessen;health_food_store;vitamins_and_supplements;aquatic_pet_store;linen;mobile_phone_store;electronics;computer_store;audio_visual_equipment_store;appliance_store;office_equipment;car_stereo_store;home_goods_store;furniture_store;mattress_store;eyewear_and_optician;cosmetic_and_beauty_supplies;hair_supply_stores;beauty_product_supplier;flowers_and_gifts_shop;nursery_and_gardening;medical_supply;photography_store_and_services;car_dealer;used_car_dealer;motorcycle_dealer;truck_dealer;auto_company,16
+ferreteria,compras,Ferretería,Hardware store,ferreteria,shop=hardware;shop=doityourself;shop=paint,hardware_store;paint_store;building_supply_store;home_improvement_store;lumber_store;home_and_garden;lighting_store;glass_and_mirror_sales_service,15
+distribuidora,compras,Distribuidora,Wholesale distributor,distribuidora,shop=wholesale;shop=trade,freight_and_cargo_service;shipping_center;food_beverage_service_distribution;wholesale_store;industrial_equipment,15
+centro_comercial,compras,Centro comercial,Shopping mall,centro-comercial,shop=mall,shopping_center,12
+libreria,compras,Librería,Bookshop and stationery,libreria,shop=books;shop=stationery,bookstore,16
+gasolinera,auto,Gasolinera,Petrol station,gasolinera,amenity=fuel,gas_station,13
+taller_mecanico,auto,Taller mecánico,Car repair shop,taller-mecanico,shop=car_repair;craft=car_repair,automotive_repair;automotive_services_and_repair;motorcycle_repair;auto_body_shop;oil_change_station;auto_customization;emissions_inspection;bike_repair_maintenance,15
+vulcanizacion,auto,Vulcanización,Tyre repair,vulcanizacion,shop=tyres;shop=car_repair,tire_dealer_and_repair;wheel_and_rim_repair,15
+lavado_autos,auto,Lavado de autos,Car wash,lavado-autos,amenity=car_wash,car_wash;auto_detailing,15
+repuestos,auto,Repuestos,Auto parts,repuestos,shop=car_parts;shop=motorcycle_parts,auto_parts_and_supply_store,15
+parqueo,auto,Parqueo,Parking,parqueo,amenity=parking,parking,15
+banco,dinero,Banco,Bank,banco,amenity=bank,bank_credit_union;banks;credit_union;financial_service,14
+cajero,dinero,Cajero automático,ATM,cajero,amenity=atm,atms,15
+casa_de_cambio,dinero,Casa de cambio,Currency exchange,casa-de-cambio,amenity=bureau_de_change,currency_exchange,15
+remesas,dinero,Remesas,Money transfer,remesas,shop=money_transfer;shop=money_lender,money_transfer_services,15
+hospital,salud,Hospital,Hospital,hospital,amenity=hospital,hospital;emergency_room,12
+clinica,salud,Clínica,Clinic,clinica,amenity=clinic;amenity=doctors;healthcare=centre,health_and_medical;medical_center;diagnostic_services;laboratory_testing;family_practice;womens_health_clinic;eye_care_clinic;medical_service_organizations;physical_therapy;obstetrician_and_gynecologist;pediatrician;dermatologist;orthopedist;surgeon;cardiologist;urologist;radiologist;neurologist;endocrinologist;internal_medicine;ear_nose_and_throat;plastic_surgeon;podiatry;psychologist;psychotherapist;naturopathic_holistic;acupuncture;nutritionist;fertility;optometrist;massage_therapy;retirement_home,15
+farmacia,salud,Farmacia,Pharmacy,farmacia,amenity=pharmacy;healthcare=pharmacy,pharmacy,14
+dentista,salud,Dentista,Dentist,dentista,amenity=dentist;healthcare=dentist,dentist;general_dentistry;orthodontist;cosmetic_dentist;oral_surgeon;endodontist;pediatric_dentist,15
+veterinaria,salud,Veterinaria,Veterinary clinic,veterinaria,amenity=veterinary;healthcare=veterinary,veterinarian,15
+hotel,turismo,Hotel,Hotel,hotel,tourism=hotel;tourism=guest_house,hotel;accommodation;resort;beach_resort;holiday_rental_home,13
+hostal,turismo,Hostal,Hostel,hostal,tourism=hostel,bed_and_breakfast;lodge;cabin;hostel,14
+playa,turismo,Playa,Beach,playa,natural=beach,beach;surfing,11
+mirador,turismo,Mirador,Viewpoint,mirador,tourism=viewpoint,,12
+volcan,turismo,Volcán,Volcano,volcan,natural=volcano,,9
+laguna,turismo,Laguna,Crater lagoon,laguna,natural=water;water=lagoon,lake,10
+museo,turismo,Museo,Museum,museo,tourism=museum,museum;history_museum;art_gallery;aquarium,13
+iglesia,turismo,Iglesia,Church,iglesia,amenity=place_of_worship;building=church,church_cathedral;catholic_church;evangelical_church;pentecostal_church;baptist_church;religious_organization;mission,14
+parque,turismo,Parque,Park,parque,leisure=park;leisure=playground,park;playground;public_plaza;national_park,13
+sitio_turistico,turismo,Sitio turístico,Tourist attraction,sitio-turistico,tourism=attraction;tourism=theme_park;tourism=zoo,landmark_and_historical_building;tours;sightseeing_tour_agency;boat_tours;nature_reserve;wildlife_sanctuary;amusement_park;theme_park;hiking_trail;hot_springs;zoo,12
+policia,servicios,Policía,Police station,policia,amenity=police,police_department,13
+bomberos,servicios,Bomberos,Fire station,bomberos,amenity=fire_station,fire_department,13
+correo,servicios,Correo,Post office,correo,amenity=post_office,post_office,15
+embajada,servicios,Embajada,Embassy,embajada,amenity=embassy;office=diplomatic,embassy,13
+universidad,servicios,Universidad,University,universidad,amenity=university;amenity=college,college_university;campus_building;medical_school;educational_research_institute,12
+escuela,servicios,Escuela,School,escuela,amenity=school;amenity=kindergarten,school;elementary_school;high_school;middle_school;preschool;private_school;public_school;religious_school;day_care_preschool;language_school;specialty_school;vocational_and_technical_school;art_school;music_school;dance_school;driving_school;computer_coaching;educational_services;education,14
+gimnasio,servicios,Gimnasio,Gym,gimnasio,leisure=fitness_centre;leisure=sports_centre,gym;yoga_studio;martial_arts_club;gymnastics_center;fitness_trainer;boxing_class,15
+salon_belleza,servicios,Salón de belleza,Beauty salon,salon-belleza,shop=hairdresser;shop=beauty,beauty_salon;hair_salon;barber;spas;nail_salon;day_spa;skin_care;makeup_artist;health_spa;medical_spa;tattoo_and_piercing,16
+lavanderia,servicios,Lavandería,Laundry,lavanderia,shop=laundry;shop=dry_cleaning,laundromat;dry_cleaning,16
+hotel_paso,servicios,Hotel de paso,Short-stay motel,hotel-paso,tourism=love_hotel;tourism=motel,,15
+terminal_buses,transporte,Terminal de buses,Bus terminal,terminal-buses,amenity=bus_station;public_transport=station,bus_station,12
+parada_bus,transporte,Parada de bus,Bus stop,parada-bus,highway=bus_stop;public_transport=platform,,16
+aeropuerto,transporte,Aeropuerto,Airport,aeropuerto,aeroway=aerodrome;aeroway=terminal,airport,10
+puerto,transporte,Puerto,Port,puerto,amenity=ferry_terminal;landuse=port,pier;ferry_boat_company,12
+taxi,transporte,Taxi,Taxi stand,taxi,amenity=taxi,taxi_service,15
 rotonda,referencia,Rotonda,Roundabout,rotonda,junction=roundabout;highway=mini_roundabout,,13
 semaforo,referencia,Semáforo,Traffic light,semaforo,highway=traffic_signals,,16
-puente,referencia,Puente,Bridge,puente,man_made=bridge,,14
-monumento,referencia,Monumento,Monument,monumento,historic=monument;historic=memorial;tourism=artwork,attractions_and_activities.monument,14
-estadio,referencia,Estadio,Stadium,estadio,leisure=stadium;building=stadium,active_life.stadium_arena,12
-cementerio,referencia,Cementerio,Cemetery,cementerio,amenity=grave_yard;landuse=cemetery,public_service_and_government.cemetery,13
+puente,referencia,Puente,Bridge,puente,man_made=bridge,bridge,14
+monumento,referencia,Monumento,Monument,monumento,historic=monument;historic=memorial;tourism=artwork,monument;fountain,14
+estadio,referencia,Estadio,Stadium,estadio,leisure=stadium;building=stadium,stadium_arena;baseball_stadium;soccer_stadium;soccer_field;baseball_field;basketball_court;sports_and_recreation_venue;swimming_pool,12
+cementerio,referencia,Cementerio,Cemetery,cementerio,amenity=grave_yard;landuse=cemetery,funeral_services_and_cemeteries,13
 otro,otro,Otro,Other,otro,,,16

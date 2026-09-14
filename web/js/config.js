@@ -34,6 +34,7 @@ const DEFAULTS = {
   center: [-86.2504, 12.115],
   zoom: 12.5,
   maxZoom: 19,
+  maxPixelRatio: 2,
 
   //: Augusto C. Sandino (MGA); centre of the curated circle, see docs/SPEC.md.
   mgaCenter: [-86.1682, 12.1415],
