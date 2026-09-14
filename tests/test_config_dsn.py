@@ -23,7 +23,7 @@ def settings(**kwargs) -> Settings:
 
 class TestComposition:
     def test_defaults(self):
-        assert settings().database_url == "postgresql://nicanav:nicanav@postgis:5432/nicanav"
+        assert settings().database_url == "postgresql://nicanav:@postgis:5432/nicanav"
 
     def test_parts_are_used(self):
         url = settings(

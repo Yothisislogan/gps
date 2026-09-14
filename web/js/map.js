@@ -229,6 +229,7 @@ export async function createMap(options) {
     initialStyle = offlineStyle(onlineStyle, available);
   }
 
+  if (options.isCurrent && !options.isCurrent()) throw new Error('Map startup superseded');
   let map;
   try {
     map = new maplibregl.Map({
@@ -890,43 +891,46 @@ export async function bootstrap() {
   onLanguageChange(() => { document.documentElement.lang = getLanguage(); applyStaticStrings(); sheet.close(); });
   const link = parseDeepLink(window.location.pathname + window.location.hash);
   const status = document.getElementById('map-status');
-  let booting = false;
+  let bootId = 0, stopConnectivity = null, linkTimer, loadTimer;
   async function bootMap() {
-    if (booting) return;
-    booting = true;
+    const owner = ++bootId;
+    const current = () => owner === bootId;
+    clearTimeout(loadTimer); clearTimeout(linkTimer);
+    stopConnectivity?.(); stopConnectivity = null;
+    controller?.map.remove(); controller = context.map = null;
     if (status) { status.hidden = false; status.textContent = t('map.loading'); }
-    const timer = setTimeout(() => {
-      if (status) status.replaceChildren(el('span', { text: t('map.slow') }),
-        el('button', { type: 'button', class: 'btn', text: t('common.retry'), onClick: () => {
-          if (controller) { controller.map.remove(); controller = context.map = null; booting = false; bootMap(); }
-        } }));
+    const timer = loadTimer = setTimeout(() => {
+      if (current() && status) status.replaceChildren(el('span', { text: t('map.slow') }),
+        el('button', { type: 'button', class: 'btn', text: t('common.retry'), onClick: bootMap }));
     }, 8000);
     try {
-      controller = await createMap({ container,
+      const created = await createMap({ container, isCurrent: current,
         center: link ? [link.lon, link.lat] : undefined, zoom: link?.zoom,
         night: document.documentElement.classList.contains('night'),
-        onReady: () => { clearTimeout(timer); if (status) status.hidden = true; performance.mark?.('nicanav-map-ready'); },
+        onReady: () => { if (!current()) return; clearTimeout(timer); if (status) status.hidden = true; performance.mark?.('nicanav-map-ready'); },
         onPoiClick: (hit) => hit.id ? openPlaceCard(hit.id, context) : openPointCard(hit, context),
         onMapClick: () => { if (context.pickPoint) return; if (sheet.isOpen()) sheet.close(); search?.show(false); },
         onLongPress: (point) => openPointCard(point, context),
       });
-      context.map = controller;
+      if (!current()) { created.map.remove(); return; }
+      controller = context.map = created;
       if (context.selected) {
         controller.setMarker('selected', context.selected.lat, context.selected.lon, { title: context.selected.name });
         controller.flyTo(context.selected.lat, context.selected.lon);
       }
       if (link) controller.setMarker('shared', link.lat, link.lon, { title: t('share.title') });
-      let linkTimer;
-      controller.map.on('moveend', () => { clearTimeout(linkTimer); linkTimer = setTimeout(() => writeDeepLink(controller.map), 700); });
+      created.map.on('moveend', () => { clearTimeout(linkTimer); linkTimer = setTimeout(() => { if (current()) writeDeepLink(created.map); }, 700); });
       const offline = await import('./offline.js');
       await offline.activateOffline();
-      offline.autoSwitchOnConnectivity(controller.map);
+      if (current()) stopConnectivity = offline.autoSwitchOnConnectivity(created.map);
     } catch {
+      if (!current()) return;
+      controller?.map.remove(); controller = context.map = null;
       clearTimeout(timer);
       if (status) status.replaceChildren(el('span', { text: t('map.failedTitle') }), el('button', {
         type: 'button', class: 'btn', text: t('common.retry'), onClick: bootMap,
       }));
-    } finally { booting = false; }
+    }
   }
   bootMap();
 }

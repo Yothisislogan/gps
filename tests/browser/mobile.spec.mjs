@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 async function search(page) {
   await page.getByRole('searchbox').fill('clínica');
-  await page.getByRole('button', { name: /Clínica de prueba/ }).click();
+  await page.locator('#search-results').getByRole('button', { name: /Clínica de prueba/ }).click();
   await expect(page.getByRole('heading', { name: 'Clínica de prueba' })).toBeVisible();
 }
 
@@ -52,6 +52,7 @@ test('installed shell reopens offline and contains valid installation icons', as
   await page.goto('/');
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller?.state === 'activated');
   await page.evaluate(async () => {
     const manifest = await (await fetch('/manifest.webmanifest')).json();
     for (const icon of manifest.icons) {
@@ -71,7 +72,7 @@ test('small screens do not overflow and preserve 48-pixel primary targets', asyn
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Casa', exact: true })).toBeVisible();
   const measures = await page.evaluate(() => ({ width: document.documentElement.scrollWidth,
-    targets: [...document.querySelectorAll('.icon-button,.chip')].filter(e => !e.hidden).map(e => e.getBoundingClientRect().height) }));
+    targets: [...document.querySelectorAll('.icon-button,.chip')].filter(e => e.getClientRects().length > 0).map(e => e.getBoundingClientRect().height) }));
   expect(measures.width).toBeLessThanOrEqual(320);
   expect(measures.targets.every(h => h >= 48)).toBe(true);
   await page.screenshot({ path: `test-results/mobile-${test.info().project.name}.png` });

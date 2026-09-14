@@ -760,6 +760,7 @@ class Sheet {
     this.root.classList.toggle('sheet--full', Boolean(options.expanded));
     this.root.style.transform = '';
     this.root.hidden = false;
+    this.root.classList.add('sheet--open');
     document.body.classList.add('has-sheet');
   }
 
@@ -780,7 +781,7 @@ class Sheet {
     if (!this.root || this.root.hidden) return;
     this.root.hidden = true;
     this.root.style.transform = '';
-    this.root.classList.remove('sheet--full');
+    this.root.classList.remove('sheet--full', 'sheet--open');
     if (this.body) clear(this.body);
     document.body.classList.remove('has-sheet');
     const handler = this.closeHandler;
@@ -820,7 +821,7 @@ class Sheet {
     }
     if (this.dragOffset > 90) this.close();
     else if (this.dragOffset < -40) this.root.classList.add('sheet--full');
-    else if (this.dragOffset > 40) this.root.classList.remove('sheet--full');
+    else if (this.dragOffset > 40) this.root.classList.remove('sheet--full', 'sheet--open');
   }
 }
 

@@ -62,6 +62,8 @@ async function openCache() {
   return caches.open(CACHE_NAME);
 }
 
+const STORED_ARCHIVE = '/offline/current-map';
+
 function archiveUrl() {
   return CONFIG.offlineArchive || `${CONFIG.tilesBase}/circle.pmtiles`;
 }
@@ -72,7 +74,7 @@ function archiveUrl() {
  */
 async function storedArchive() {
   const cache = await openCache();
-  const response = await cache.match(archiveUrl());
+  const response = await cache.match(STORED_ARCHIVE) || await cache.match(archiveUrl()) || await cache.match('/tiles/circle.pmtiles');
   if (!response) return null;
   if ((response.headers.get('content-type') || '').includes('application/json')) {
     const meta = await response.json();
@@ -211,7 +213,7 @@ async function streamDownload(onProgress, signal) {
     abort.signal.throwIfAborted();
     // A single pointer replacement commits the validated download. The old
     // archive survives cancellation, storage failure and captive portals.
-    await cache.put(archiveUrl(), new Response(JSON.stringify(meta), { headers: { 'Content-Type': 'application/json' } }));
+    await cache.put(STORED_ARCHIVE, new Response(JSON.stringify(meta), { headers: { 'Content-Type': 'application/json' } }));
     await removeStored(previous?.meta).catch(() => {});
     await activateOffline().catch(() => {});
     if (onProgress) onProgress(1, received, received);
@@ -232,7 +234,8 @@ async function streamDownload(onProgress, signal) {
 export async function clearOffline() {
   try {
     const stored = await storedArchive();
-    await (await openCache()).delete(archiveUrl());
+    const cache = await openCache();
+    for (const key of new Set([STORED_ARCHIVE, archiveUrl(), '/tiles/circle.pmtiles'])) await cache.delete(key);
     await removeStored(stored?.meta);
     return true;
   } catch { return false; }
@@ -290,20 +293,22 @@ export function useOfflineSource(map, useOffline) {
  * @param {any} map
  */
 export function autoSwitchOnConnectivity(map) {
+  let disposed = false;
   const update = async () => {
     const status = await offlineStatus();
-    if (!navigator.onLine && !status.present) return;
+    if (disposed || (!navigator.onLine && !status.present)) return;
     if (!navigator.onLine) {
       await activateOffline();
-      useOfflineSource(map, true);
+      if (!disposed) useOfflineSource(map, true);
     } else {
       useOfflineSource(map, false);
     }
   };
   window.addEventListener('online', update);
   window.addEventListener('offline', update);
-  update();
+  update().catch(() => {});
   return () => {
+    disposed = true;
     window.removeEventListener('online', update);
     window.removeEventListener('offline', update);
   };
