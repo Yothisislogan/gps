@@ -5,6 +5,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
@@ -56,10 +57,22 @@ def test_generation_proxy_preserves_old_routes_ranges_and_client_identity(tmp_pa
         + "}}"
     )
     subprocess.run([nginx, "-t", "-c", str(config)], check=True, capture_output=True)
-    subprocess.run([nginx, "-c", str(config)], check=True, capture_output=True)
+    process = subprocess.Popen(
+        [nginx, "-c", str(config), "-g", "daemon off;"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
         with httpx.Client(base_url=f"http://127.0.0.1:{port}", trust_env=False) as client:
-            assert client.get("/api/route").json()["port"] == servers[1].server_port
+            for _ in range(100):
+                try:
+                    response = client.get("/api/route")
+                    break
+                except httpx.ConnectError:
+                    time.sleep(0.05)
+            else:
+                pytest.fail("nginx did not start within five seconds")
+            assert response.json()["port"] == servers[1].server_port
             old = client.get(
                 "/data-releases/old/tiles/base.pmtiles",
                 headers={"Range": "bytes=0-126", "X-Forwarded-For": "attacker"},
@@ -72,7 +85,8 @@ def test_generation_proxy_preserves_old_routes_ranges_and_client_identity(tmp_pa
             assert client.get(asset).json()["path"] == asset
             assert client.get("/data-releases/retired/api/route").status_code == 410
     finally:
-        subprocess.run([nginx, "-c", str(config), "-s", "stop"], check=True, capture_output=True)
+        process.terminate()
+        process.wait(timeout=10)
         for server in servers:
             server.shutdown()
             server.server_close()
